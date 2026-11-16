@@ -9,6 +9,10 @@
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="梦里有zhi">
 </head>
 <body>
 
@@ -167,7 +171,14 @@ function checkUpdate() {
     })
     .catch(() => {});
 }
-setInterval(checkUpdate, 30000); // 每30秒检查一次
+// 页面打开时立即检查
+checkUpdate();
+// 每30秒检查一次
+setInterval(checkUpdate, 30000);
+// 从后台切回前台时检查（主屏幕 App 专属）
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) checkUpdate();
+});
 </script>
 <script src="app.js?v=8"></script>
 </body>
