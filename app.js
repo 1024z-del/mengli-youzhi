@@ -8,7 +8,11 @@ const STORAGE_KEYS = {
   DIARIES: 'mlyz_diaries',
   PASSWORD: 'mlyz_password',
   BG_IMAGE: 'mlyz_bg_image',
-  INVITED_VISIBLE: 'mlyz_invited_visible' // 标记是否"已输入邀请码"
+  INVITED_VISIBLE: 'mlyz_invited_visible',
+  GH_TOKEN: 'mlyz_gh_token',
+  GIST_ID: 'mlyz_gist_id',
+  AUTO_SYNC: 'mlyz_auto_sync',
+  SYNC_LAST_TIME: 'mlyz_sync_last_time'
 };
 
 // ========== 全局状态 ==========
@@ -92,6 +96,161 @@ function confirmModal(title, text, onOk) {
   cancelBtn.addEventListener('click', cleanup);
   okBtn.addEventListener('click', okHandler);
 }
+
+// ========== GitHub Gist 云同步 ==========
+
+const GistSync = {
+  // 获取配置
+  getConfig() {
+    return {
+      token: loadData(STORAGE_KEYS.GH_TOKEN, ''),
+      gistId: loadData(STORAGE_KEYS.GIST_ID, ''),
+      autoSync: loadData(STORAGE_KEYS.AUTO_SYNC, false)
+    };
+  },
+
+  // 保存配置
+  saveConfig(token, gistId, autoSync) {
+    saveData(STORAGE_KEYS.GH_TOKEN, token);
+    saveData(STORAGE_KEYS.GIST_ID, gistId);
+    saveData(STORAGE_KEYS.AUTO_SYNC, autoSync);
+  },
+
+  // 测试连接
+  async testConnection(token, gistId) {
+    try {
+      const resp = await fetch(`https://api.github.com/gists/${gistId}`, {
+        headers: { 'Authorization': `token ${token}` }
+      });
+      if (resp.status === 200) {
+        const data = await resp.json();
+        return { ok: true, message: `已连接 Gist「${data.description || '梦里有zhi'}」` };
+      } else if (resp.status === 404) {
+        return { ok: false, message: 'Gist ID 不存在' };
+      } else if (resp.status === 401 || resp.status === 403) {
+        return { ok: false, message: 'Token 无效' };
+      } else {
+        return { ok: false, message: `连接失败 (${resp.status})` };
+      }
+    } catch (e) {
+      return { ok: false, message: '网络错误，请检查 Wi-Fi' };
+    }
+  },
+
+  // 备份日记到 Gist（只备份文字，图片视频因为太大跳过）
+  async backup(diaries) {
+    const { token, gistId } = this.getConfig();
+    if (!token || !gistId) {
+      return { ok: false, message: '请先配置 Token 和 Gist ID' };
+    }
+
+    // 过滤掉 base64 图片/视频（Gist 有大小限制）
+    const safeDiaries = diaries.map(d => ({
+      ...d,
+      image: d.image ? '[图片已省略，请手动导出完整备份]' : null,
+      video: d.video ? '[视频已省略，请手动导出完整备份]' : null
+    }));
+
+    const payload = {
+      description: '梦里有zhi - 日记数据同步',
+      files: {
+        'diaries.json': {
+          content: JSON.stringify({
+            version: 1,
+            diaries: safeDiaries,
+            updatedAt: Date.now()
+          }, null, 2)
+        }
+      }
+    };
+
+    try {
+      const resp = await fetch(`https://api.github.com/gists/${gistId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (resp.status === 200) {
+        saveData(STORAGE_KEYS.SYNC_LAST_TIME, Date.now());
+        return { ok: true, message: '✅ 已备份到云端' };
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        return { ok: false, message: err.message || `备份失败 (${resp.status})` };
+      }
+    } catch (e) {
+      return { ok: false, message: '网络错误' };
+    }
+  },
+
+  // 从 Gist 恢复日记
+  async restore() {
+    const { token, gistId } = this.getConfig();
+    if (!token || !gistId) {
+      return { ok: false, message: '请先配置 Token 和 Gist ID' };
+    }
+
+    try {
+      const resp = await fetch(`https://api.github.com/gists/${gistId}`, {
+        headers: { 'Authorization': `token ${token}` }
+      });
+
+      if (resp.status !== 200) {
+        return { ok: false, message: `恢复失败 (${resp.status})` };
+      }
+
+      const data = await resp.json();
+      const file = data.files['diaries.json'];
+      if (!file || !file.content) {
+        return { ok: false, message: '云端没有数据' };
+      }
+
+      const parsed = JSON.parse(file.content);
+      if (!parsed.diaries || !Array.isArray(parsed.diaries)) {
+        return { ok: false, message: '云端数据格式不对' };
+      }
+
+      return { ok: true, diaries: parsed.diaries, message: `✅ 拉回 ${parsed.diaries.length} 篇日记` };
+    } catch (e) {
+      return { ok: false, message: '网络错误或数据损坏' };
+    }
+  },
+
+  // 一键创建新的 Gist
+  async createNewGist(token) {
+    try {
+      const resp = await fetch('https://api.github.com/gists', {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          description: '梦里有zhi - 日记数据同步',
+          public: false,
+          files: {
+            'diaries.json': {
+              content: JSON.stringify({ version: 1, diaries: [], updatedAt: 0 })
+            }
+          }
+        })
+      });
+
+      if (resp.status === 201) {
+        const data = await resp.json();
+        saveData(STORAGE_KEYS.GIST_ID, data.id);
+        return { ok: true, gistId: data.id, htmlUrl: data.html_url };
+      } else {
+        return { ok: false, message: '创建失败' };
+      }
+    } catch (e) {
+      return { ok: false, message: '网络错误' };
+    }
+  }
+};
 
 // ========== 启动密码验证 ==========
 
@@ -275,6 +434,20 @@ function publishDiary() {
 
   showToast('✨ 发布成功！');
   resetPublishForm();
+
+  // 自动同步到云端
+  const syncOnPublish = $('#sync-on-publish').checked;
+  const { autoSync } = GistSync.getConfig();
+  if (syncOnPublish || autoSync) {
+    setTimeout(async () => {
+      const result = await GistSync.backup(diaries);
+      if (result.ok) {
+        showToast('☁️ 已同步到云端', 1500);
+      } else {
+        showToast('⚠️ 同步失败: ' + result.message, 2500);
+      }
+    }, 300);
+  }
 }
 
 function resetPublishForm() {
@@ -492,6 +665,57 @@ function initSettings() {
     });
   });
 
+  // ===== 云同步按钮 =====
+  // 保存同步配置
+  $('#btn-save-sync').addEventListener('click', () => {
+    const token = $('#gh-token').value.trim();
+    const gistId = $('#gist-id').value.trim();
+    const autoSync = $('#auto-sync').checked;
+
+    if (!token) { showToast('❌ 请输入 GitHub Token'); return; }
+    if (!gistId) { showToast('❌ 请输入 Gist ID'); return; }
+
+    GistSync.saveConfig(token, gistId, autoSync);
+    showToast('✅ 配置已保存');
+    loadSettingsView();
+  });
+
+  // 测试连接
+  $('#btn-test-sync').addEventListener('click', async () => {
+    const token = $('#gh-token').value.trim() || loadData(STORAGE_KEYS.GH_TOKEN, '');
+    const gistId = $('#gist-id').value.trim() || loadData(STORAGE_KEYS.GIST_ID, '');
+    showToast('⏳ 正在连接...', 2000);
+    const result = await GistSync.testConnection(token, gistId);
+    showToast(result.message, 2500);
+    loadSettingsView();
+  });
+
+  // 立即备份
+  $('#btn-backup-now').addEventListener('click', async () => {
+    const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+    if (diaries.length === 0) { showToast('ℹ️ 没有日记可备份'); return; }
+    showToast('⏳ 正在备份...', 2000);
+    const result = await GistSync.backup(diaries);
+    showToast(result.message, 2500);
+    loadSettingsView();
+  });
+
+  // 从云端恢复
+  $('#btn-restore-now').addEventListener('click', async () => {
+    confirmModal('从云端恢复？', '会用云端数据覆盖本地日记，确定吗？', async () => {
+      showToast('⏳ 正在拉取...', 2000);
+      const result = await GistSync.restore();
+      if (result.ok) {
+        saveData(STORAGE_KEYS.DIARIES, result.diaries);
+        showToast(result.message, 2500);
+        renderDiaryList();
+      } else {
+        showToast(result.message, 2500);
+      }
+      loadSettingsView();
+    });
+  });
+
   // 导出
   $('#btn-export').addEventListener('click', exportData);
   // 导入
@@ -522,6 +746,28 @@ function loadSettingsView() {
   } else {
     preview.style.background = '';
     preview.innerHTML = '<span>默认渐变背景</span>';
+  }
+
+  // 同步配置
+  const config = GistSync.getConfig();
+  $('#gh-token').value = config.token;
+  $('#gist-id').value = config.gistId;
+  $('#auto-sync').checked = config.autoSync;
+
+  // 同步状态显示
+  const statusEl = $('#sync-status');
+  const lastTime = loadData(STORAGE_KEYS.SYNC_LAST_TIME, 0);
+  if (config.token && config.gistId) {
+    if (lastTime > 0) {
+      statusEl.textContent = `✅ 已配置 · 上次同步 ${formatDate(lastTime)}`;
+      statusEl.className = 'sync-status ok';
+    } else {
+      statusEl.textContent = `✅ 已配置 · 还没同步过`;
+      statusEl.className = 'sync-status ok';
+    }
+  } else {
+    statusEl.textContent = '⚠️ 未配置（Token + Gist ID 必填）';
+    statusEl.className = 'sync-status';
   }
 }
 

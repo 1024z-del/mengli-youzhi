@@ -102,6 +102,15 @@
             <input type="text" id="invite-code" placeholder="输入邀请码（多个用逗号分隔）">
           </div>
 
+          <!-- 发布时同步开关 -->
+          <div class="sync-toggle-box" id="sync-toggle-box">
+            <label class="sync-toggle">
+              <input type="checkbox" id="sync-on-publish">
+              <span class="sync-slider"></span>
+            </label>
+            <span class="sync-label">☁️ 发布时同步到云端（推荐）</span>
+          </div>
+
           <!-- 操作按钮 -->
           <div class="action-row">
             <button class="action-btn" id="btn-image" title="上传图片">
@@ -162,6 +171,42 @@
           </div>
           <button id="btn-set-password" class="publish-btn small">保存密码</button>
           <button id="btn-clear-password" class="publish-btn small ghost">取消密码</button>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">☁️ 云同步（GitHub Gist）</h3>
+          <p class="hint-text">自动把日记备份到 GitHub 云服务器，手机丢了也不怕</p>
+
+          <div class="setting-row">
+            <span>自动同步</span>
+            <label class="sync-toggle">
+              <input type="checkbox" id="auto-sync">
+              <span class="sync-slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <span>GitHub Token</span>
+          </div>
+          <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxxx" class="full-input">
+
+          <div class="setting-row">
+            <span>Gist ID</span>
+          </div>
+          <input type="text" id="gist-id" placeholder="一串字母数字，例如 8553fa..." class="full-input">
+
+          <div class="setting-row">
+            <span id="sync-status" class="sync-status">⚠️ 未配置</span>
+          </div>
+
+          <div class="action-row">
+            <button class="mini-btn" id="btn-save-sync">💾 保存配置</button>
+            <button class="mini-btn" id="btn-test-sync">🔗 测试连接</button>
+          </div>
+          <div class="action-row">
+            <button class="mini-btn primary" id="btn-backup-now">☁️ 立即备份到云端</button>
+            <button class="mini-btn" id="btn-restore-now">📥 从云端恢复</button>
+          </div>
         </div>
 
         <div class="card">

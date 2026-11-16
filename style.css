@@ -589,6 +589,108 @@ main {
   background: #ffd5d5;
 }
 
+.mini-btn.primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.mini-btn.primary:active {
+  opacity: 0.9;
+}
+
+/* ========== 云同步开关 ========== */
+.sync-toggle-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f0fff4;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.sync-toggle {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.sync-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sync-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: #ccc;
+  border-radius: 26px;
+  transition: 0.3s;
+}
+
+.sync-slider:before {
+  position: absolute;
+  content: '';
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.3s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.sync-toggle input:checked + .sync-slider {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.sync-toggle input:checked + .sync-slider:before {
+  transform: translateX(22px);
+}
+
+.sync-label {
+  font-size: 14px;
+  color: #4a4a4a;
+}
+
+.full-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #eee;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.full-input:focus {
+  border-color: #6a5acd;
+  background: white;
+}
+
+.sync-status {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 15px;
+  background: #fff3e0;
+  color: #e67e22;
+}
+
+.sync-status.ok {
+  background: #e8f5e9;
+  color: #27ae60;
+}
+
+.sync-status.error {
+  background: #ffebee;
+  color: #e74c3c;
+}
+
 /* ========== 底部导航 ========== */
 .bottom-nav {
   position: fixed;
