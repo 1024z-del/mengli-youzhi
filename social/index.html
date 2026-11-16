@@ -51,6 +51,16 @@
 
     <!-- 动态页 -->
     <section id="tab-feed" class="tab-content">
+      <div id="feed-manage-bar" style="display:none;padding:10px 16px;background:#fff;border-bottom:1px solid #eee;position:sticky;top:0;z-index:10;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <button onclick="toggleSelectAll()" class="btn-secondary" style="flex:1;padding:8px;">全选</button>
+          <button onclick="deleteSelected()" class="btn-danger" style="flex:1;padding:8px;">删除选中</button>
+          <button onclick="exitManageMode()" class="btn-secondary" style="flex:1;padding:8px;">取消</button>
+        </div>
+      </div>
+      <div style="padding:10px 16px;text-align:right;">
+        <button id="btn-manage" onclick="enterManageMode()" class="btn-secondary" style="padding:4px 12px;font-size:13px;">🗑️ 管理</button>
+      </div>
       <div id="feed"></div>
     </section>
 
@@ -145,7 +155,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 7;
+const CURRENT_V = 8;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -159,6 +169,6 @@ function checkUpdate() {
 }
 setInterval(checkUpdate, 30000); // 每30秒检查一次
 </script>
-<script src="app.js?v=7"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>

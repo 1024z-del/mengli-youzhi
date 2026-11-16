@@ -204,10 +204,66 @@ function isFriend(a, b) {
 }
 
 // ---- Load posts for feed ----
+// ---- Manage mode (multi-select delete) ----
+let manageMode = false;
+let selectedPostIds = new Set();
+let allPostsCache = [];
+
+function enterManageMode() {
+  manageMode = true;
+  selectedPostIds.clear();
+  document.getElementById('feed-manage-bar').style.display = 'block';
+  document.getElementById('btn-manage').style.display = 'none';
+  loadPosts();
+}
+
+function exitManageMode() {
+  manageMode = false;
+  selectedPostIds.clear();
+  document.getElementById('feed-manage-bar').style.display = 'none';
+  document.getElementById('btn-manage').style.display = 'inline-block';
+  loadPosts();
+}
+
+function toggleSelectAll() {
+  const ownPosts = allPostsCache.filter(p => p.authorId === currentUser.id);
+  if (selectedPostIds.size === ownPosts.length) {
+    selectedPostIds.clear();
+  } else {
+    selectedPostIds = new Set(ownPosts.map(p => p.id));
+  }
+  renderFeed(allPostsCache);
+}
+
+function toggleSelectPost(id) {
+  if (selectedPostIds.has(id)) {
+    selectedPostIds.delete(id);
+  } else {
+    selectedPostIds.add(id);
+  }
+}
+
+async function deleteSelected() {
+  if (selectedPostIds.size === 0) {
+    alert('请先选择要删除的日记');
+    return;
+  }
+  if (!confirm(`确定删除选中的 ${selectedPostIds.size} 篇日记吗？`)) return;
+
+  const { content: posts, sha } = await ghGetFile('data/posts.json');
+  const filtered = posts.filter(p => !selectedPostIds.has(p.id));
+  await ghPutFile('data/posts.json', filtered, sha);
+
+  selectedPostIds.clear();
+  showToast('🗑️ 删除成功');
+  exitManageMode();
+}
+
 async function loadPosts() {
   if (!currentUser) return;
   await loadFriendships();
   const { content: posts } = await ghGetFile('data/posts.json');
+  allPostsCache = posts || [];
   const visible = (posts || []).filter(p => canViewPost(p, currentUser.id));
   visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   renderFeed(visible);
@@ -215,6 +271,27 @@ async function loadPosts() {
 
 function renderFeed(posts) {
   const container = document.getElementById('feed');
+
+  if (manageMode) {
+    // 只显示自己的日记供选择删除
+    const ownPosts = posts.filter(p => p.authorId === currentUser.id);
+    if (!ownPosts.length) {
+      container.innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;">你还没有日记</p>';
+      return;
+    }
+    container.innerHTML = ownPosts.map(p => `
+      <div class="post-card-manage">
+        <input type="checkbox" ${selectedPostIds.has(p.id) ? 'checked' : ''} onchange="toggleSelectPost('${p.id}')">
+        <div class="mini-preview">
+          <div class="mp-author">${escapeHtml(p.authorName)} ${visLabel(p.visibility)}</div>
+          <div class="mp-text">${escapeHtml(p.text || '(无文字)')}</div>
+          <div class="mp-time">${formatTime(p.createdAt)}</div>
+        </div>
+      </div>
+    `).join('');
+    return;
+  }
+
   if (!posts.length) {
     container.innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;">还没有日记哦～ 去发布第一篇吧！</p>';
     return;
