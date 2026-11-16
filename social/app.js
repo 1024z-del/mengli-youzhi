@@ -79,6 +79,7 @@ async function hashPwd(pwd) {
 let currentUser = JSON.parse(localStorage.getItem('mlyz_user') || 'null');
 let replyToUser = null; // { userId, username } 当前回复目标
 let currentDetailPostId = null; // 当前打开的日记 ID
+let pendingOpenPost = null; // 关闭当前弹窗后要打开的日记 ID
 
 // ---- 弹窗返回栈（支持手机返回键）----
 const overlayStack = [];
@@ -110,6 +111,12 @@ window.addEventListener('popstate', (e) => {
       replyToUser = null;
       currentDetailPostId = null;
     }
+  }
+  // 如果有关闭后要打开的日记，现在打开
+  if (pendingOpenPost) {
+    const postId = pendingOpenPost;
+    pendingOpenPost = null;
+    viewPost(postId);
   }
 });
 
@@ -1275,7 +1282,7 @@ function renderLikesList() {
     return 0; // 保持原顺序
   });
   container.innerHTML = likedPosts.map(p => `
-    <div class="comment-item" onclick="closeLikesModal();viewPost('${p.id}')" style="cursor:pointer;">
+    <div class="comment-item" onclick="openLikedPost('${p.id}')" style="cursor:pointer;">
       ${getAvatarHtml(p.authorName, p.authorAvatar)}
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:600;color:#333;">${escapeHtml(p.authorName)} ${visLabel(p.visibility)}</div>
@@ -1285,6 +1292,12 @@ function renderLikesList() {
       </div>
     </div>
   `).join('');
+}
+
+// 从点赞列表打开日记：设置待打开日记，然后用 history.back 关闭点赞弹窗，关闭后自动打开日记
+function openLikedPost(postId) {
+  pendingOpenPost = postId;
+  history.back();
 }
 
 // ---- 回收站 ----
