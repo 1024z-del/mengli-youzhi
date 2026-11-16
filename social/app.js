@@ -111,6 +111,12 @@ window.addEventListener('popstate', (e) => {
       replyToUser = null;
       currentDetailPostId = null;
     }
+    // 如果栈里还有上一个弹窗，重新显示它
+    if (overlayStack.length) {
+      const prev = overlayStack[overlayStack.length - 1];
+      const prevEl = document.getElementById(prev);
+      if (prevEl) prevEl.style.display = 'flex';
+    }
   }
   // 如果有关闭后要打开的日记，现在打开
   if (pendingOpenPost) {
@@ -1293,10 +1299,10 @@ function renderLikesList() {
   `).join('');
 }
 
-// 从点赞列表打开日记：设置待打开日记，然后用 history.back 关闭点赞弹窗，关闭后自动打开日记
+// 从点赞列表打开日记：不关闭点赞弹窗，直接在上面打开详情页
+// 返回时会先关闭详情，再重新显示点赞弹窗
 function openLikedPost(postId) {
-  pendingOpenPost = postId;
-  history.back();
+  viewPost(postId);
 }
 
 // ---- 回收站 ----
