@@ -675,6 +675,22 @@ function copyInvite(code) {
   showToast('✅ 邀请码已复制');
 }
 
+function copyAppUrl() {
+  const url = 'https://1024z-del.github.io/mengli-youzhi/social/';
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('✅ 网页地址已复制');
+  }).catch(() => {
+    // 降级方案
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('✅ 网页地址已复制');
+  });
+}
+
 async function generateInvite() {
   try {
     const code = 'MLYZ' + Math.random().toString(36).slice(2, 6).toUpperCase();
