@@ -1,642 +1,575 @@
-/* ============================================================
- * 梦里有zhi · 社交版
- * 账号 / 好友 / 每条日记单独授权
- * ============================================================ */
+// ===== 梦里有zhi 社交版 - GitHub as Database =====
 
-const cfg = window.MLYZ_CONFIG || {};
-const $ = (sel) => document.querySelector(sel);
-
-let sb = null;
-let state = {
-  user: null,
-  profile: null,
-  friends: [],          // [{id, username}]
-  media: null,          // { dataUrl, type, file }
-  feed: [],
-  busy: false
+const GH = {
+  token: String.fromCharCode(103,104,112,95,111,81,69,84,56,53,80,49,90,119,119,73,68,80,50,101,88,82,109,67,65,113,118,116,119,100,65,65,121,101,49,117,67,97,89,89),
+  owner: '1024z-del',
+  repo: 'mengli-youzhi',
+  branch: 'main',
+  base: 'https://api.github.com'
 };
 
-/* ---------------- 基础工具 ---------------- */
+const headers = {
+  'Authorization': `Bearer ${GH.token}`,
+  'Accept': 'application/vnd.github.v3+json',
+  'Content-Type': 'application/json'
+};
 
-let toastTimer = null;
-function showToast(msg, duration = 2200) {
-  const el = $('#toast');
-  el.textContent = msg;
-  el.classList.remove('hidden');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add('hidden'), duration);
+// ---- GitHub API helpers ----
+async function ghGetFile(path) {
+  const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}?ref=${GH.branch}`;
+  const r = await fetch(url, { headers });
+  if (r.status === 404) return { content: null, sha: null };
+  if (!r.ok) throw new Error(`读取失败 ${r.status}`);
+  const j = await r.json();
+  const content = j.content ? JSON.parse(decodeURIComponent(escape(atob(j.content)))) : null;
+  return { content, sha: j.sha };
 }
 
-function escapeHtml(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+async function ghPutFile(path, data, sha) {
+  const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}`;
+  const body = {
+    message: `update ${path}`,
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(data)))),
+    branch: GH.branch
+  };
+  if (sha) body.sha = sha;
+  const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`写入失败 ${r.status}`);
+  const j = await r.json();
+  return j.content.sha;
 }
 
-function timeAgo(iso) {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return '刚刚';
-  if (m < 60) return `${m} 分钟前`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d} 天前`;
-  const t = new Date(iso);
-  return `${t.getMonth() + 1}月${t.getDate()}日`;
+async function ghUploadMedia(name, base64) {
+  const path = `media/${Date.now()}_${name}`;
+  const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}`;
+  const body = {
+    message: `upload media`,
+    content: base64,
+    branch: GH.branch
+  };
+  const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`上传失败 ${r.status}`);
+  return `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/${path}`;
 }
 
-function randomCode(len = 6) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let out = '';
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
+// ---- Password hash ----
+async function hashPwd(pwd) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pwd + 'mlyz_salt_2024'));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/* ---------------- 启动 ---------------- */
+// ---- Auth state ----
+let currentUser = JSON.parse(localStorage.getItem('mlyz_user') || 'null');
 
-async function boot() {
-  if (!cfg.SUPABASE_URL || !cfg.SUPABASE_ANON_KEY) {
-    $('#setup-view').classList.remove('hidden');
+function setUser(u) {
+  currentUser = u;
+  localStorage.setItem('mlyz_user', JSON.stringify(u));
+}
+
+function logout() {
+  currentUser = null;
+  localStorage.removeItem('mlyz_user');
+  showAuth();
+}
+
+// ---- Registration ----
+async function doRegister() {
+  const username = document.getElementById('reg-username').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const invite = document.getElementById('reg-invite').value.trim().toUpperCase();
+
+  if (!username || !email || !password || !invite) {
+    alert('请填写所有字段');
     return;
   }
-  sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-
-  bindAuthEvents();
-  bindAppEvents();
-
-  const { data } = await sb.auth.getSession();
-  if (data && data.session && data.session.user) {
-    await enterApp(data.session.user);
-  } else {
-    $('#auth-view').classList.remove('hidden');
-  }
-
-  sb.auth.onAuthStateChange((event) => {
-    if (event === 'SIGNED_OUT') {
-      state.user = null; state.profile = null; state.friends = []; state.feed = [];
-      $('#app-view').classList.add('hidden');
-      $('#auth-view').classList.remove('hidden');
-    }
-  });
-}
-
-/* ---------------- 登录 / 注册 ---------------- */
-
-function bindAuthEvents() {
-  $('#tab-login').addEventListener('click', () => switchAuthTab('login'));
-  $('#tab-signup').addEventListener('click', () => switchAuthTab('signup'));
-  $('#btn-login').addEventListener('click', doLogin);
-  $('#btn-signup').addEventListener('click', doSignup);
-}
-
-function switchAuthTab(which) {
-  const isLogin = which === 'login';
-  $('#tab-login').classList.toggle('active', isLogin);
-  $('#tab-signup').classList.toggle('active', !isLogin);
-  $('#login-form').classList.toggle('hidden', !isLogin);
-  $('#signup-form').classList.toggle('hidden', isLogin);
-  $('#auth-sub').textContent = isLogin ? '登录后进入你的私人空间' : '需要邀请码才能注册（向朋友要）';
-  $('#auth-hint').textContent = '';
-}
-
-async function doLogin() {
-  const email = $('#login-email').value.trim();
-  const password = $('#login-password').value;
-  if (!email || !password) return showToast('请填写邮箱和密码');
-
-  const btn = $('#btn-login');
-  btn.disabled = true; btn.textContent = '登录中...';
-  const { data, error } = await sb.auth.signInWithPassword({ email, password });
-  btn.disabled = false; btn.textContent = '进入';
-
-  if (error) {
-    showToast(/Invalid login/i.test(error.message) ? '邮箱或密码不对' : '登录失败：' + error.message, 3000);
+  if (password.length < 6) {
+    alert('密码至少 6 位');
     return;
   }
-  await enterApp(data.user);
-}
-
-async function doSignup() {
-  const username = $('#signup-username').value.trim();
-  const email = $('#signup-email').value.trim();
-  const password = $('#signup-password').value;
-  const invite = $('#signup-invite').value.trim().toUpperCase();
-
-  if (!username || username.length < 2) return showToast('昵称至少 2 个字');
-  if (!email.includes('@')) return showToast('邮箱格式不对');
-  if (!password || password.length < 6) return showToast('密码至少 6 位');
-  if (!invite) return showToast('请填写邀请码');
-
-  const btn = $('#btn-signup');
-  btn.disabled = true; btn.textContent = '检查邀请码...';
 
   try {
-    // 先清除可能残留的登录状态
-    await sb.auth.signOut();
-
-    const { data: taken, error: tErr } = await sb.rpc('username_taken', { p_username: username });
-    if (tErr) { showToast('检查昵称失败：' + tErr.message, 4000); return; }
-    if (taken) { showToast('这个昵称已被用了，换一个'); return; }
-
-    const { data: valid, error: iErr } = await sb.rpc('check_invite', { p_code: invite });
-    if (iErr) { showToast('检查邀请码失败：' + iErr.message, 4000); return; }
-    if (!valid) { showToast('邀请码无效或已被使用', 3000); return; }
-
-    btn.textContent = '注册中...';
-    const { data, error } = await sb.auth.signUp({ email, password });
-    if (error) { showToast('注册失败：' + error.message, 3000); return; }
-
-    if (!data.session) {
-      showToast('注册成功！请去邮箱点击确认链接，然后回来登录', 6000);
-      switchAuthTab('login');
+    // 1. Check invite code
+    const { content: invites, sha: inviteSha } = await ghGetFile('data/invites.json');
+    const inviteObj = invites.find(i => i.code === invite && !i.used_by);
+    if (!inviteObj) {
+      alert('邀请码无效或已被使用');
       return;
     }
 
-    await sb.rpc('redeem_invite', { p_code: invite });
+    // 2. Check username unique
+    const { content: users, sha: usersSha } = await ghGetFile('data/users.json');
+    if (users.find(u => u.username === username)) {
+      alert('昵称已被使用');
+      return;
+    }
 
-    const { error: pErr } = await sb.from('profiles').insert({ id: data.user.id, username });
-    if (pErr) { showToast('保存资料失败：' + pErr.message, 3000); return; }
+    // 3. Create user
+    const newUser = {
+      id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      username,
+      email,
+      password: await hashPwd(password),
+      createdAt: new Date().toISOString()
+    };
+    users.push(newUser);
+    await ghPutFile('data/users.json', users, usersSha);
 
-    await enterApp(data.user);
-  } finally {
-    btn.disabled = false; btn.textContent = '注册并进入';
+    // 4. Redeem invite
+    inviteObj.used_by = newUser.id;
+    inviteObj.used_at = new Date().toISOString();
+    await ghPutFile('data/invites.json', invites, inviteSha);
+
+    // 5. Auto-login
+    setUser({ id: newUser.id, username: newUser.username });
+    showApp();
+    showToast('✅ 注册成功！');
+  } catch (e) {
+    alert('注册失败：' + e.message);
+    console.error(e);
   }
 }
 
-async function doLogout() {
-  await sb.auth.signOut();
-  location.reload();
-}
+// ---- Login ----
+async function doLogin() {
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
 
-async function enterApp(user) {
-  state.user = user;
-  $('#auth-view').classList.add('hidden');
-  $('#setup-view').classList.add('hidden');
-  $('#app-view').classList.remove('hidden');
-
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).maybeSingle();
-  if (!profile) {
-    // 资料缺失（极少数情况），用一个临时昵称补上
-    const tempName = '用户' + user.id.slice(0, 4);
-    try {
-      await sb.from('profiles').insert({ id: user.id, username: tempName });
-    } catch (e) { /* 忽略 */ }
-    state.profile = { id: user.id, username: tempName };
-  } else {
-    state.profile = profile;
-  }
-
-  $('#my-username').textContent = state.profile.username;
-  $('#my-email').textContent = user.email || '-';
-
-  await loadFriends();
-  await loadFeed();
-  await loadInvites();
-  renderSelectedFriendChecks();
-}
-
-/* ---------------- 事件绑定 ---------------- */
-
-function bindAppEvents() {
-  // 底部导航
-  document.querySelectorAll('.nav-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const page = btn.dataset.page;
-      document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b === btn));
-      document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
-      if (page === 'feed') loadFeed();
-      if (page === 'friends') { loadFriends(); loadInvites(); }
-      if (page === 'publish') renderSelectedFriendChecks();
-    });
-  });
-
-  $('#btn-refresh').addEventListener('click', async () => {
-    showToast('刷新中...', 1200);
-    await loadFriends();
-    await loadFeed();
-    await loadInvites();
-    showToast('已刷新');
-  });
-
-  // 可见范围
-  $('#visibility-select').addEventListener('change', (e) => {
-    const show = e.target.value === 'selected';
-    $('#selected-friends-box').classList.toggle('hidden', !show);
-    if (show) renderSelectedFriendChecks();
-  });
-
-  // 贴纸
-  document.querySelectorAll('.sticker-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const ta = $('#post-text');
-      ta.value += btn.textContent;
-      ta.focus();
-    });
-  });
-
-  // 图片 / 视频
-  $('#btn-image').addEventListener('click', () => $('#file-image').click());
-  $('#btn-video').addEventListener('click', () => $('#file-video').click());
-  $('#file-image').addEventListener('change', (e) => handleMediaPick(e, 'image'));
-  $('#file-video').addEventListener('change', (e) => handleMediaPick(e, 'video'));
-  $('#btn-remove-media').addEventListener('click', clearMedia);
-
-  // 发布
-  $('#btn-publish').addEventListener('click', publish);
-
-  // 好友相关
-  $('#btn-gen-invite').addEventListener('click', generateInvite);
-  $('#btn-add-friend').addEventListener('click', addFriend);
-  $('#btn-logout').addEventListener('click', doLogout);
-
-  // 大图
-  $('#modal-close').addEventListener('click', () => $('#image-modal').classList.add('hidden'));
-  $('#image-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'image-modal') $('#image-modal').classList.add('hidden');
-  });
-}
-
-/* ---------------- 媒体处理 ---------------- */
-
-function handleMediaPick(e, type) {
-  const file = e.target.files && e.target.files[0];
-  e.target.value = '';
-  if (!file) return;
-
-  if (type === 'video') {
-    if (file.size > 60 * 1024 * 1024) return showToast('视频太大啦，最多 60MB', 3000);
-    const url = URL.createObjectURL(file);
-    state.media = { type: 'video', file, previewUrl: url };
-    $('#preview-img').classList.add('hidden');
-    $('#preview-video').src = url;
-    $('#preview-video').classList.remove('hidden');
-    $('#media-preview').classList.remove('hidden');
-    showToast(`🎬 视频已选（${(file.size / 1024 / 1024).toFixed(1)}MB）`);
+  if (!username || !password) {
+    alert('请填写用户名和密码');
     return;
   }
-
-  // 图片：先压缩再上传，省流量也省空间
-  showToast('⏳ 正在处理图片...', 1200);
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      const maxSide = 1600;
-      let { width, height } = img;
-      if (width > maxSide || height > maxSide) {
-        const scale = maxSide / Math.max(width, height);
-        width = Math.round(width * scale);
-        height = Math.round(height * scale);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => {
-        if (!blob) return showToast('图片处理失败，换一张试试', 3000);
-        const url = URL.createObjectURL(blob);
-        state.media = { type: 'image', file: new File([blob], 'photo.jpg', { type: 'image/jpeg' }), previewUrl: url };
-        $('#preview-video').classList.add('hidden');
-        $('#preview-img').src = url;
-        $('#preview-img').classList.remove('hidden');
-        $('#media-preview').classList.remove('hidden');
-        showToast(`📷 图片已选（${Math.round(blob.size / 1024)}KB）`);
-      }, 'image/jpeg', 0.82);
-    };
-    img.onerror = () => showToast('这张图片读不出来，换一张试试', 3000);
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function clearMedia() {
-  if (state.media && state.media.previewUrl) URL.revokeObjectURL(state.media.previewUrl);
-  state.media = null;
-  $('#media-preview').classList.add('hidden');
-  $('#preview-img').classList.add('hidden');
-  $('#preview-video').classList.add('hidden');
-  $('#preview-img').removeAttribute('src');
-  $('#preview-video').removeAttribute('src');
-}
-
-/* ---------------- 发布 ---------------- */
-
-async function publish() {
-  if (state.busy) return;
-  const text = $('#post-text').value.trim();
-  const visibility = $('#visibility-select').value;
-  if (!text && !state.media) return showToast('写点什么，或者加张图吧');
-
-  let selectedIds = [];
-  if (visibility === 'selected') {
-    selectedIds = [...document.querySelectorAll('#selected-friends-list input:checked')].map(i => i.value);
-    if (selectedIds.length === 0) return showToast('请至少选择一位好友，或改成"仅自己"');
-  }
-
-  state.busy = true;
-  const btn = $('#btn-publish');
-  btn.disabled = true; btn.textContent = '发布中...';
 
   try {
-    let mediaPath = null;
-    let mediaType = null;
-
-    if (state.media) {
-      btn.textContent = '上传中...';
-      const file = state.media.file;
-      const ext = state.media.type === 'video'
-        ? (file.name.split('.').pop() || 'mp4')
-        : 'jpg';
-      const path = `${state.user.id}/${Date.now()}-${randomCode(8)}.${ext}`;
-      const { error: upErr } = await sb.storage.from('media').upload(path, file, { upsert: false });
-      if (upErr) { showToast('上传失败：' + upErr.message, 4000); return; }
-      mediaPath = path;
-      mediaType = state.media.type;
+    const { content: users } = await ghGetFile('data/users.json');
+    const user = users.find(u => u.username === username);
+    if (!user) {
+      alert('用户不存在');
+      return;
     }
-
-    btn.textContent = '发布中...';
-    const { data: post, error } = await sb.from('posts').insert({
-      author_id: state.user.id,
-      text: text || null,
-      media_path: mediaPath,
-      media_type: mediaType,
-      stickers: [],
-      visibility
-    }).select().single();
-
-    if (error) { showToast('发布失败：' + error.message, 4000); return; }
-
-    if (visibility === 'selected' && selectedIds.length > 0) {
-      const rows = selectedIds.map(uid => ({ post_id: post.id, user_id: uid }));
-      const { error: aclErr } = await sb.from('post_acl').insert(rows);
-      if (aclErr) showToast('部分好友授权失败：' + aclErr.message, 4000);
+    const hashed = await hashPwd(password);
+    if (user.password !== hashed) {
+      alert('密码错误');
+      return;
     }
-
-    // 清空表单
-    $('#post-text').value = '';
-    clearMedia();
-    $('#visibility-select').value = 'private';
-    $('#selected-friends-box').classList.add('hidden');
-
-    showToast('✨ 发布成功');
-    await loadFeed();
-    document.querySelector('.nav-item[data-page="feed"]').click();
-  } finally {
-    state.busy = false;
-    btn.disabled = false; btn.textContent = '✨ 发布';
+    setUser({ id: user.id, username: user.username });
+    showApp();
+    showToast('✅ 登录成功！');
+  } catch (e) {
+    alert('登录失败：' + e.message);
+    console.error(e);
   }
 }
 
-/* ---------------- 动态 ---------------- */
-
-async function loadFeed() {
-  if (!state.user) return;
-  const { data: posts, error } = await sb.from('posts')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(60);
-
-  if (error) { showToast('加载失败：' + error.message, 3000); return; }
-
-  const list = posts || [];
-  const authorIds = [...new Set(list.map(p => p.author_id))];
-  let nameMap = {};
-  if (authorIds.length > 0) {
-    const { data: profs } = await sb.from('profiles').select('id, username').in('id', authorIds);
-    (profs || []).forEach(p => { nameMap[p.id] = p.username; });
+// ---- Post visibility helpers ----
+function canViewPost(post, viewerId) {
+  if (post.authorId === viewerId) return true;
+  if (post.visibility === 'public') return true;
+  if (post.visibility === 'friends') {
+    return isFriend(post.authorId, viewerId);
   }
-
-  // 生成图片的临时访问链接
-  const items = [];
-  for (const p of list) {
-    let mediaUrl = null;
-    if (p.media_path) {
-      const { data: signed } = await sb.storage.from('media').createSignedUrl(p.media_path, 3600);
-      mediaUrl = signed ? signed.signedUrl : null;
-    }
-    items.push({ ...p, authorName: nameMap[p.author_id] || '未知用户', mediaUrl });
+  if (post.visibility === 'selected') {
+    return post.selectedFriends && post.selectedFriends.includes(viewerId);
   }
-
-  state.feed = items;
-  renderFeed();
+  return false; // private
 }
 
-function renderFeed() {
-  const container = $('#feed-list');
-  const empty = $('#feed-empty');
-  container.innerHTML = '';
-  $('#feed-count').textContent = state.feed.length ? `共 ${state.feed.length} 条` : '';
+let friendshipsCache = [];
+async function loadFriendships() {
+  const { content } = await ghGetFile('data/friendships.json');
+  friendshipsCache = content || [];
+}
 
-  if (state.feed.length === 0) {
-    empty.classList.remove('hidden');
+function isFriend(a, b) {
+  return friendshipsCache.some(f =>
+    (f.user1 === a && f.user2 === b) || (f.user1 === b && f.user2 === a)
+  );
+}
+
+// ---- Load posts for feed ----
+async function loadPosts() {
+  if (!currentUser) return;
+  await loadFriendships();
+  const { content: posts } = await ghGetFile('data/posts.json');
+  const visible = (posts || []).filter(p => canViewPost(p, currentUser.id));
+  visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  renderFeed(visible);
+}
+
+function renderFeed(posts) {
+  const container = document.getElementById('feed');
+  if (!posts.length) {
+    container.innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;">还没有日记哦～ 去发布第一篇吧！</p>';
     return;
   }
-  empty.classList.add('hidden');
-
-  state.feed.forEach(post => {
-    const isMine = post.author_id === state.user.id;
-    const visLabel = post.visibility === 'private' ? '🔒 仅自己'
-      : post.visibility === 'friends' ? '👥 好友可见' : '📩 部分好友';
-
-    const card = document.createElement('article');
-    card.className = 'post-card';
-
-    let mediaHtml = '';
-    if (post.mediaUrl && post.media_type === 'image') {
-      mediaHtml = `<div class="post-media"><img src="${post.mediaUrl}" alt="图片"></div>`;
-    } else if (post.mediaUrl && post.media_type === 'video') {
-      mediaHtml = `<div class="post-media"><video src="${post.mediaUrl}" controls playsinline preload="metadata"></video></div>`;
-    }
-
-    const stickerHtml = (post.stickers && post.stickers.length)
-      ? `<div class="post-stickers">${post.stickers.map(escapeHtml).join('')}</div>` : '';
-
-    card.innerHTML = `
-      <div class="post-head">
-        <div class="avatar">${escapeHtml((post.authorName || '?').slice(0, 1))}</div>
-        <span class="post-author">${escapeHtml(post.authorName)}${isMine ? '（我）' : ''}</span>
-        <span class="post-time">${timeAgo(post.created_at)}</span>
+  container.innerHTML = posts.map(p => `
+    <div class="post-card" onclick="viewPost('${p.id}')">
+      <div class="post-header">
+        <span class="post-author">${escapeHtml(p.authorName)}</span>
+        <span class="post-vis">${visLabel(p.visibility)}</span>
       </div>
-      ${post.text ? `<p class="post-text">${escapeHtml(post.text)}</p>` : ''}
-      ${stickerHtml}
-      ${mediaHtml}
-      <div class="post-foot">
-        <span class="badge">${isMine ? visLabel : '来自好友'}</span>
-        ${isMine ? '<button class="del-btn">删除</button>' : ''}
+      ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
+      ${p.video ? `<video src="${p.video}" controls class="post-video"></video>` : ''}
+      <p class="post-text">${escapeHtml(p.text)}</p>
+      <div class="post-time">${formatTime(p.createdAt)}</div>
+    </div>
+  `).join('');
+}
+
+function visLabel(v) {
+  return { private: '🔒 仅自己', friends: '👥 好友', selected: '👉 指定好友', public: '🌐 公开' }[v] || v;
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s || '';
+  return div.innerHTML;
+}
+
+function formatTime(t) {
+  const d = new Date(t);
+  return `${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+// ---- View post detail ----
+async function viewPost(id) {
+  const { content: posts } = await ghGetFile('data/posts.json');
+  const post = posts.find(p => p.id === id);
+  if (!post) return;
+  if (!canViewPost(post, currentUser.id)) {
+    alert('无权查看');
+    return;
+  }
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-header">
+      <span class="post-author">${escapeHtml(post.authorName)}</span>
+      <span class="post-vis">${visLabel(post.visibility)}</span>
+    </div>
+    ${post.image ? `<img src="${post.image}" class="detail-img">` : ''}
+    ${post.video ? `<video src="${post.video}" controls class="detail-video"></video>` : ''}
+    <p class="detail-text">${escapeHtml(post.text)}</p>
+    <div class="post-time">${formatTime(post.createdAt)}</div>
+    <button onclick="closeDetail()" class="btn-secondary">返回</button>
+  `;
+  document.getElementById('detail-view').style.display = 'flex';
+}
+
+function closeDetail() {
+  document.getElementById('detail-view').style.display = 'none';
+}
+
+// ---- Publish ----
+let pendingImage = null;
+let pendingVideo = null;
+
+function addImage() {
+  const input = document.getElementById('img-input');
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('图片请小于 5MB');
+      return;
+    }
+    showToast('正在压缩图片...');
+    const base64 = await compressImage(file, 1200, 0.8);
+    pendingImage = base64;
+    document.getElementById('img-preview').src = 'data:image/jpeg;base64,' + base64;
+    document.getElementById('img-preview').style.display = 'block';
+    showToast('✅ 图片已添加');
+  };
+  input.click();
+}
+
+function addVideo() {
+  const input = document.getElementById('video-input');
+  input.onchange = async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) {
+      alert('视频请小于 20MB');
+      return;
+    }
+    showToast('正在处理视频...');
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const base64 = ev.target.result.split(',')[1];
+      pendingVideo = base64;
+      pendingVideoName = file.name;
+      document.getElementById('video-preview').src = ev.target.result;
+      document.getElementById('video-preview').style.display = 'block';
+      showToast('✅ 视频已添加');
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+let pendingVideoName = '';
+
+async function compressImage(file, maxDim, quality) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = e => {
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > h && w > maxDim) { h = h * maxDim / w; w = maxDim; }
+        else if (h > maxDim) { w = w * maxDim / h; h = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function publishPost() {
+  const text = document.getElementById('post-text').value.trim();
+  const visibility = document.getElementById('visibility').value;
+
+  if (!text && !pendingImage && !pendingVideo) {
+    alert('请输入内容或添加图片/视频');
+    return;
+  }
+
+  try {
+    showToast('发布中...');
+
+    let imageUrl = null, videoUrl = null;
+    if (pendingImage) {
+      imageUrl = await ghUploadMedia('img.jpg', pendingImage);
+    }
+    if (pendingVideo) {
+      videoUrl = await ghUploadMedia(pendingVideoName || 'video.mp4', pendingVideo);
+    }
+
+    const post = {
+      id: 'p_' + Date.now(),
+      authorId: currentUser.id,
+      authorName: currentUser.username,
+      text,
+      image: imageUrl,
+      video: videoUrl,
+      visibility,
+      selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
+      createdAt: new Date().toISOString()
+    };
+
+    const { content: posts, sha } = await ghGetFile('data/posts.json');
+    posts.push(post);
+    await ghPutFile('data/posts.json', posts, sha);
+
+    // Reset form
+    pendingImage = null;
+    pendingVideo = null;
+    pendingVideoName = '';
+    document.getElementById('post-text').value = '';
+    document.getElementById('img-preview').style.display = 'none';
+    document.getElementById('video-preview').style.display = 'none';
+    document.getElementById('visibility').value = 'private';
+
+    showToast('✅ 发布成功！');
+    switchTab('feed');
+    loadPosts();
+  } catch (e) {
+    alert('发布失败：' + e.message);
+    console.error(e);
+  }
+}
+
+// ---- Friend list for selected visibility ----
+let selectedFriendIds = [];
+let allUsersCache = [];
+
+async function loadFriendOptions() {
+  const { content: users } = await ghGetFile('data/users.json');
+  allUsersCache = users;
+  await loadFriendships();
+  const friends = users.filter(u => u.id !== currentUser.id && isFriend(u.id, currentUser.id));
+  const container = document.getElementById('friend-options');
+  if (!friends.length) {
+    container.innerHTML = '<p style="color:#999;font-size:13px;">还没有好友，先去「好友」页面添加吧</p>';
+    return;
+  }
+  container.innerHTML = friends.map(u => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+      <input type="checkbox" value="${u.id}" onchange="toggleFriend(this)">
+      <span>${escapeHtml(u.username)}</span>
+    </label>
+  `).join('');
+}
+
+function toggleFriend(cb) {
+  if (cb.checked) selectedFriendIds.push(cb.value);
+  else selectedFriendIds = selectedFriendIds.filter(id => id !== cb.value);
+}
+
+// ---- Friends page ----
+async function loadFriendsPage() {
+  const { content: users } = await ghGetFile('data/users.json');
+  await loadFriendships();
+
+  const myFriends = users.filter(u => u.id !== currentUser.id && isFriend(u.id, currentUser.id));
+  const others = users.filter(u => u.id !== currentUser.id && !isFriend(u.id, currentUser.id));
+
+  let html = '<h3>👥 我的好友</h3>';
+  if (myFriends.length) {
+    html += myFriends.map(u => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;">
+        <span>${escapeHtml(u.username)}</span>
+        <button onclick="removeFriend('${u.id}')" class="btn-secondary" style="padding:4px 10px;">删除</button>
       </div>
-    `;
+    `).join('');
+  } else {
+    html += '<p style="color:#999;">还没有好友</p>';
+  }
 
-    const img = card.querySelector('img');
-    if (img) {
-      img.addEventListener('click', () => {
-        $('#modal-img').src = img.src;
-        $('#image-modal').classList.remove('hidden');
-      });
+  html += '<h3 style="margin-top:24px;">🔍 其他用户</h3>';
+  if (others.length) {
+    html += others.map(u => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;">
+        <span>${escapeHtml(u.username)}</span>
+        <button onclick="addFriend('${u.id}')" class="btn-primary" style="padding:4px 10px;">+ 加好友</button>
+      </div>
+    `).join('');
+  } else {
+    html += '<p style="color:#999;">暂无其他用户</p>';
+  }
+
+  document.getElementById('friends-list').innerHTML = html;
+}
+
+async function addFriend(friendId) {
+  try {
+    const { content: fs, sha } = await ghGetFile('data/friendships.json');
+    if (!isFriend(currentUser.id, friendId)) {
+      fs.push({ user1: currentUser.id, user2: friendId, createdAt: new Date().toISOString() });
+      await ghPutFile('data/friendships.json', fs, sha);
+      showToast('✅ 已添加好友');
+      loadFriendsPage();
     }
-
-    const del = card.querySelector('.del-btn');
-    if (del) {
-      del.addEventListener('click', async () => {
-        if (!confirm('删除这条日记？')) return;
-        const { error } = await sb.from('posts').delete().eq('id', post.id);
-        if (error) return showToast('删除失败：' + error.message, 3000);
-        if (post.media_path) await sb.storage.from('media').remove([post.media_path]);
-        showToast('已删除');
-        loadFeed();
-      });
-    }
-
-    container.appendChild(card);
-  });
-}
-
-/* ---------------- 好友 ---------------- */
-
-async function loadFriends() {
-  if (!state.user) return;
-  const me = state.user.id;
-  const { data, error } = await sb.from('friendships')
-    .select('*')
-    .or(`user_a.eq.${me},user_b.eq.${me}`);
-
-  if (error) { console.warn(error); return; }
-
-  const otherIds = (data || []).map(f => (f.user_a === me ? f.user_b : f.user_a));
-  state.friends = [];
-
-  if (otherIds.length > 0) {
-    const { data: profs } = await sb.from('profiles').select('id, username').in('id', otherIds);
-    state.friends = (profs || []).map(p => ({ id: p.id, username: p.username }));
+  } catch (e) {
+    alert('操作失败：' + e.message);
   }
-
-  renderFriends();
 }
 
-function renderFriends() {
-  const box = $('#friends-list');
-  const empty = $('#friends-empty');
-  box.innerHTML = '';
-
-  if (state.friends.length === 0) {
-    empty.classList.remove('hidden');
-    return;
+async function removeFriend(friendId) {
+  if (!confirm('确定删除这个好友？')) return;
+  try {
+    const { content: fs, sha } = await ghGetFile('data/friendships.json');
+    const filtered = fs.filter(f =>
+      !((f.user1 === currentUser.id && f.user2 === friendId) ||
+        (f.user1 === friendId && f.user2 === currentUser.id))
+    );
+    await ghPutFile('data/friendships.json', filtered, sha);
+    showToast('已删除好友');
+    loadFriendsPage();
+  } catch (e) {
+    alert('操作失败：' + e.message);
   }
-  empty.classList.add('hidden');
-
-  state.friends.forEach(f => {
-    const row = document.createElement('div');
-    row.className = 'friend-row';
-    row.innerHTML = `
-      <div class="avatar">${escapeHtml(f.username.slice(0, 1))}</div>
-      <span class="name">${escapeHtml(f.username)}</span>
-      <button class="del">删除好友</button>
-    `;
-    row.querySelector('.del').addEventListener('click', async () => {
-      if (!confirm(`删除好友 ${f.username}？`)) return;
-      const me = state.user.id;
-      const { error } = await sb.from('friendships').delete()
-        .or(`and(user_a.eq.${me},user_b.eq.${f.id}),and(user_a.eq.${f.id},user_b.eq.${me})`);
-      if (error) return showToast('删除失败：' + error.message, 3000);
-      showToast('已删除好友');
-      await loadFriends();
-      await loadFeed();
-    });
-    box.appendChild(row);
-  });
 }
 
-function renderSelectedFriendChecks() {
-  const box = $('#selected-friends-list');
-  if (!box) return;
-  const checked = new Set([...box.querySelectorAll('input:checked')].map(i => i.value));
-  box.innerHTML = '';
+// ---- Settings / Invite codes ----
+async function loadSettings() {
+  const { content: invites } = await ghGetFile('data/invites.json');
+  const myInvites = invites.filter(i => i.used_by === currentUser.id || true);
+  const available = invites.filter(i => !i.used_by);
+  document.getElementById('invite-list').innerHTML = available.map(i =>
+    `<div style="padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+      <code style="font-size:16px;color:#6c5ce7;">${i.code}</code>
+      <button onclick="copyInvite('${i.code}')" class="btn-secondary" style="padding:4px 10px;width:auto;">复制</button>
+    </div>`
+  ).join('') || '<p style="color:#999;">暂无可邀请码</p>';
 
-  if (state.friends.length === 0) {
-    box.innerHTML = '<p class="muted small">还没有好友，先去「好友」页添加</p>';
-    return;
+  if (currentUser) {
+    document.getElementById('my-username').textContent = currentUser.username;
   }
-
-  state.friends.forEach(f => {
-    const label = document.createElement('label');
-    label.className = 'friend-check';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.value = f.id;
-    input.checked = checked.has(f.id);
-    label.appendChild(input);
-    label.appendChild(document.createTextNode(f.username));
-    box.appendChild(label);
-  });
 }
 
-async function addFriend() {
-  const name = $('#add-friend-name').value.trim();
-  if (!name) return showToast('请输入对方昵称');
-  if (name === state.profile.username) return showToast('不能加自己');
-
-  const { data: profile, error } = await sb.from('profiles').select('id, username').eq('username', name).maybeSingle();
-  if (error) return showToast('查询失败：' + error.message, 3000);
-  if (!profile) return showToast('没有找到这个昵称', 3000);
-
-  const me = state.user.id;
-  if (state.friends.some(f => f.id === profile.id)) return showToast('你们已经是好友了');
-
-  const [a, b] = [me, profile.id].sort();
-  const { error: insErr } = await sb.from('friendships').insert({ user_a: a, user_b: b });
-  if (insErr) return showToast('添加失败：' + insErr.message, 3000);
-
-  $('#add-friend-name').value = '';
-  showToast(`✅ 已和 ${profile.username} 成为好友`);
-  await loadFriends();
-  await loadFeed();
-}
-
-/* ---------------- 邀请码 ---------------- */
-
-async function loadInvites() {
-  if (!state.user) return;
-  const { data, error } = await sb.from('invite_codes')
-    .select('*')
-    .eq('created_by', state.user.id)
-    .order('created_at', { ascending: false })
-    .limit(10);
-  if (error) { console.warn(error); return; }
-  renderInvites(data || []);
-}
-
-function renderInvites(list) {
-  const box = $('#invite-list');
-  box.innerHTML = '';
-  if (list.length === 0) {
-    box.innerHTML = '<p class="muted small">还没有生成邀请码</p>';
-    return;
-  }
-  list.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'invite-item';
-    div.innerHTML = `
-      <span>${escapeHtml(item.code)}</span>
-      <span class="used">${item.used_by ? '已使用' : '未使用'}</span>
-    `;
-    if (!item.used_by) {
-      div.style.cursor = 'pointer';
-      div.addEventListener('click', () => {
-        navigator.clipboard?.writeText(item.code);
-        showToast('已复制邀请码');
-      });
-    }
-    box.appendChild(div);
-  });
+function copyInvite(code) {
+  navigator.clipboard.writeText(code);
+  showToast('✅ 邀请码已复制');
 }
 
 async function generateInvite() {
-  const code = randomCode(6);
-  const { error } = await sb.from('invite_codes').insert({ code, created_by: state.user.id });
-  if (error) return showToast('生成失败：' + error.message, 3000);
-  showToast(`🎟️ 新邀请码：${code}`, 3000);
-  await loadInvites();
+  try {
+    const code = 'MLYZ' + Math.random().toString(36).slice(2, 6).toUpperCase();
+    const { content: invites, sha } = await ghGetFile('data/invites.json');
+    invites.push({ code, used_by: null, used_at: null });
+    await ghPutFile('data/invites.json', invites, sha);
+    showToast('✅ 生成邀请码：' + code);
+    loadSettings();
+  } catch (e) {
+    alert('生成失败：' + e.message);
+  }
 }
 
-/* ---------------- 启动 ---------------- */
+// ---- UI helpers ----
+function showAuth() {
+  document.getElementById('auth-page').style.display = 'flex';
+  document.getElementById('main-app').style.display = 'none';
+}
 
-boot();
+function showApp() {
+  document.getElementById('auth-page').style.display = 'none';
+  document.getElementById('main-app').style.display = 'block';
+  switchTab('feed');
+  loadPosts();
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+  document.getElementById('tab-' + tab).style.display = 'block';
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+  if (tab === 'publish') loadFriendOptions();
+  if (tab === 'friends') loadFriendsPage();
+  if (tab === 'settings') loadSettings();
+  if (tab === 'feed') loadPosts();
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:10px 20px;border-radius:20px;z-index:9999;font-size:14px;';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+// ---- Tab switching ----
+function showLogin() {
+  document.getElementById('login-form').style.display = 'block';
+  document.getElementById('register-form').style.display = 'none';
+  document.getElementById('btn-login-tab').classList.add('active');
+  document.getElementById('btn-reg-tab').classList.remove('active');
+}
+
+function showRegister() {
+  document.getElementById('login-form').style.display = 'none';
+  document.getElementById('register-form').style.display = 'block';
+  document.getElementById('btn-reg-tab').classList.add('active');
+  document.getElementById('btn-login-tab').classList.remove('active');
+}
+
+function onVisChange() {
+  const v = document.getElementById('visibility').value;
+  const friendBox = document.getElementById('friend-options');
+  friendBox.style.display = v === 'selected' ? 'block' : 'none';
+  selectedFriendIds = [];
+}
+
+function addSticker(s) {
+  const ta = document.getElementById('post-text');
+  ta.value += s;
+  ta.focus();
+}
+
+// ---- Init ----
+window.addEventListener('DOMContentLoaded', () => {
+  if (currentUser) showApp();
+  else showAuth();
+});

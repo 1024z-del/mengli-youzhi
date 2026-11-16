@@ -5,198 +5,144 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=4">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 </head>
 <body>
 
-<!-- 未配置提示 -->
-<div id="setup-view" class="full-page hidden">
-  <div class="panel">
-    <div class="big-emoji">🔧</div>
-    <h2>还差最后一步</h2>
-    <p class="muted">请在 <code>social/config.js</code> 里填入 Supabase 的 URL 和 anon key，然后刷新页面。</p>
-  </div>
-</div>
+<!-- 登录/注册页 -->
+<div id="auth-page" class="auth-page">
+  <div class="auth-card">
+    <div class="logo">🌙</div>
+    <h1>梦里有zhi</h1>
+    <p class="auth-sub">需要邀请码才能注册（向朋友要）</p>
 
-<!-- 登录/注册 -->
-<div id="auth-view" class="full-page hidden">
-  <div class="panel">
-    <div class="big-emoji">🌙</div>
-    <h2>梦里有zhi</h2>
-    <p class="muted" id="auth-sub">登录后进入你的私人空间</p>
-
-    <div class="tabs-switch">
-      <button id="tab-login" class="switch-btn active">登录</button>
-      <button id="tab-signup" class="switch-btn">注册</button>
+    <div class="tab-switch">
+      <button id="btn-login-tab" class="tab-switch-btn active" onclick="showLogin()">登录</button>
+      <button id="btn-reg-tab" class="tab-switch-btn" onclick="showRegister()">注册</button>
     </div>
 
     <div id="login-form">
-      <input type="email" id="login-email" placeholder="邮箱" autocomplete="email">
-      <input type="password" id="login-password" placeholder="密码" autocomplete="current-password">
-      <button id="btn-login" class="primary-btn">进入</button>
+      <input type="text" id="login-username" placeholder="昵称">
+      <input type="password" id="login-password" placeholder="密码">
+      <button class="primary-btn" onclick="doLogin()">进入</button>
     </div>
 
-    <div id="signup-form" class="hidden">
-      <input type="text" id="signup-username" placeholder="昵称（好友会看到，英文/中文都行）">
-      <input type="email" id="signup-email" placeholder="邮箱" autocomplete="email">
-      <input type="password" id="signup-password" placeholder="密码（至少 6 位）" autocomplete="new-password">
-      <input type="text" id="signup-invite" placeholder="邀请码（向朋友要）" style="text-transform:uppercase">
-      <button id="btn-signup" class="primary-btn">注册并进入</button>
+    <div id="register-form" style="display:none;">
+      <input type="text" id="reg-username" placeholder="昵称（好友会看到）">
+      <input type="email" id="reg-email" placeholder="邮箱">
+      <input type="password" id="reg-password" placeholder="密码（至少6位）">
+      <input type="text" id="reg-invite" placeholder="邀请码" style="text-transform:uppercase;">
+      <button class="primary-btn" onclick="doRegister()">注册并进入</button>
     </div>
-
-    <p class="hint" id="auth-hint"></p>
   </div>
 </div>
 
 <!-- 主应用 -->
-<div id="app-view" class="hidden">
+<div id="main-app" style="display:none;">
 
   <header class="top-bar">
-    <h1 class="app-title">🌙 梦里有zhi</h1>
-    <button class="ghost-icon" id="btn-refresh" title="刷新">⟳</button>
+    <h1>🌙 梦里有zhi</h1>
   </header>
 
-  <main>
+  <main class="content">
 
-    <!-- 发布 -->
-    <section class="page active" id="page-publish">
-      <div class="card">
+    <!-- 动态页 -->
+    <section id="tab-feed" class="tab-content">
+      <div id="feed"></div>
+    </section>
+
+    <!-- 发布页 -->
+    <section id="tab-publish" class="tab-content" style="display:none;">
+      <div class="publish-card">
         <textarea id="post-text" rows="5" placeholder="今天发生了什么？写下来吧...✨"></textarea>
 
-        <div id="media-preview" class="media-preview hidden">
-          <button class="remove-media" id="btn-remove-media">×</button>
-          <img id="preview-img" class="hidden" alt="预览">
-          <video id="preview-video" class="hidden" controls playsinline></video>
-        </div>
+        <img id="img-preview" style="display:none;max-width:100%;border-radius:12px;margin:10px 0;">
+        <video id="video-preview" style="display:none;max-width:100%;border-radius:12px;margin:10px 0;" controls></video>
 
         <div class="sticker-bar">
-          <span class="sticker-label">🎀 贴纸：</span>
-          <div class="sticker-list" id="sticker-list">
-            <button class="sticker-btn">😊</button>
-            <button class="sticker-btn">🥰</button>
-            <button class="sticker-btn">😢</button>
-            <button class="sticker-btn">😴</button>
-            <button class="sticker-btn">💫</button>
-            <button class="sticker-btn">🌸</button>
-            <button class="sticker-btn">🌙</button>
-            <button class="sticker-btn">⭐</button>
-            <button class="sticker-btn">🍀</button>
-            <button class="sticker-btn">❤️</button>
-            <button class="sticker-btn">☕</button>
-            <button class="sticker-btn">🎵</button>
-            <button class="sticker-btn">📷</button>
-            <button class="sticker-btn">✈️</button>
-            <button class="sticker-btn">🏠</button>
-            <button class="sticker-btn">🎂</button>
-            <button class="sticker-btn">🌈</button>
-            <button class="sticker-btn">🔥</button>
-            <button class="sticker-btn">💭</button>
-            <button class="sticker-btn">👑</button>
-          </div>
+          <span>🎀 贴纸：</span>
+          <button class="sticker" onclick="addSticker('😊')">😊</button>
+          <button class="sticker" onclick="addSticker('🥰')">🥰</button>
+          <button class="sticker" onclick="addSticker('😢')">😢</button>
+          <button class="sticker" onclick="addSticker('😴')">😴</button>
+          <button class="sticker" onclick="addSticker('💫')">💫</button>
+          <button class="sticker" onclick="addSticker('🌸')">🌸</button>
+          <button class="sticker" onclick="addSticker('🌙')">🌙</button>
+          <button class="sticker" onclick="addSticker('⭐')">⭐</button>
+          <button class="sticker" onclick="addSticker('❤️')">❤️</button>
+          <button class="sticker" onclick="addSticker('☕')">☕</button>
         </div>
 
-        <div class="visibility-box">
-          <span class="visibility-label">👁️ 谁能看：</span>
-          <select id="visibility-select">
-            <option value="private">仅自己 🔒</option>
-            <option value="friends">所有好友 👥</option>
-            <option value="selected">指定好友 📩</option>
+        <div class="vis-box">
+          <label>👁️ 谁能看：</label>
+          <select id="visibility" onchange="onVisChange()">
+            <option value="private">🔒 仅自己</option>
+            <option value="friends">👥 所有好友</option>
+            <option value="selected">📩 指定好友</option>
           </select>
         </div>
 
-        <div id="selected-friends-box" class="selected-friends hidden">
-          <p class="hint">选择可以看这条日记的好友：</p>
-          <div id="selected-friends-list" class="friend-checks"></div>
-        </div>
+        <div id="friend-options" style="display:none;background:#f5f3ff;padding:12px;border-radius:10px;margin:10px 0;"></div>
 
         <div class="action-row">
-          <button class="action-btn" id="btn-image">📷 图片</button>
-          <button class="action-btn" id="btn-video">🎬 视频</button>
-          <input type="file" id="file-image" accept="image/*" hidden>
-          <input type="file" id="file-video" accept="video/*" hidden>
+          <button class="action-btn" onclick="addImage()">📷 图片</button>
+          <button class="action-btn" onclick="addVideo()">🎬 视频</button>
         </div>
+        <input type="file" id="img-input" accept="image/*" style="display:none;">
+        <input type="file" id="video-input" accept="video/*" style="display:none;">
 
-        <button id="btn-publish" class="primary-btn">✨ 发布</button>
+        <button class="primary-btn publish-btn" onclick="publishPost()">✨ 发布日记</button>
       </div>
     </section>
 
-    <!-- 动态 -->
-    <section class="page" id="page-feed">
-      <div class="feed-head">
-        <span id="feed-count" class="muted small"></span>
-      </div>
-      <div id="feed-list" class="feed-list"></div>
-      <div id="feed-empty" class="empty-tip hidden">
-        <div class="empty-emoji">🌙</div>
-        <p>还没有内容</p>
-        <p>去发布第一篇，或者添加好友吧</p>
-      </div>
+    <!-- 好友页 -->
+    <section id="tab-friends" class="tab-content" style="display:none;">
+      <div class="publish-card" id="friends-list"></div>
     </section>
 
-    <!-- 好友 -->
-    <section class="page" id="page-friends">
-      <div class="card">
-        <h3 class="card-title">🎟️ 我的邀请码</h3>
-        <p class="hint">把邀请码发给朋友，他注册时填上就能进来。每个码只能用一次。</p>
-        <button id="btn-gen-invite" class="mini-btn primary">生成新邀请码</button>
-        <div id="invite-list" class="invite-list"></div>
+    <!-- 设置页 -->
+    <section id="tab-settings" class="tab-content" style="display:none;">
+      <div class="publish-card">
+        <h3>🎟️ 邀请码</h3>
+        <p style="color:#888;font-size:13px;">把邀请码发给朋友，他注册时填上就能进来。</p>
+        <button class="action-btn" onclick="generateInvite()">生成新邀请码</button>
+        <div id="invite-list" style="margin-top:12px;"></div>
       </div>
-
-      <div class="card">
-        <h3 class="card-title">➕ 加好友</h3>
-        <p class="hint">输入对方的昵称，互相成为好友后就能看到彼此公开的内容。</p>
-        <div class="inline-input">
-          <input type="text" id="add-friend-name" placeholder="对方昵称">
-          <button id="btn-add-friend" class="mini-btn primary">添加</button>
-        </div>
+      <div class="publish-card" style="margin-top:12px;">
+        <h3>👤 我的账号</h3>
+        <p id="my-username" style="color:#6c5ce7;font-weight:600;"></p>
+        <button class="danger-btn" onclick="logout()">退出登录</button>
       </div>
-
-      <div class="card">
-        <h3 class="card-title">👥 我的好友</h3>
-        <div id="friends-list" class="friends-list"></div>
-        <div id="friends-empty" class="muted small">还没有好友</div>
-      </div>
-    </section>
-
-    <!-- 设置 -->
-    <section class="page" id="page-settings">
-      <div class="card">
-        <h3 class="card-title">👤 我的资料</h3>
-        <div class="row"><span class="muted">昵称</span><span id="my-username">-</span></div>
-        <div class="row"><span class="muted">邮箱</span><span id="my-email">-</span></div>
-      </div>
-      <div class="card">
-        <h3 class="card-title">ℹ️ 说明</h3>
-        <p class="hint">数据存在云端服务器，换手机登录同一个账号即可看到。</p>
-        <p class="hint">你只能看到好友主动分享给你的日记，别人也看不到你没公开的内容。</p>
-      </div>
-      <button id="btn-logout" class="danger-btn">退出登录</button>
     </section>
 
   </main>
 
+  <!-- 底部导航 -->
   <nav class="bottom-nav">
-    <button class="nav-item active" data-page="publish"><span class="nav-icon">✏️</span><span class="nav-label">发布</span></button>
-    <button class="nav-item" data-page="feed"><span class="nav-icon">🌙</span><span class="nav-label">动态</span></button>
-    <button class="nav-item" data-page="friends"><span class="nav-icon">👥</span><span class="nav-label">好友</span></button>
-    <button class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span><span class="nav-label">设置</span></button>
+    <button class="tab-btn active" data-tab="feed" onclick="switchTab('feed')">
+      <span class="nav-icon">🌙</span><span class="nav-label">动态</span>
+    </button>
+    <button class="tab-btn" data-tab="publish" onclick="switchTab('publish')">
+      <span class="nav-icon">✏️</span><span class="nav-label">发布</span>
+    </button>
+    <button class="tab-btn" data-tab="friends" onclick="switchTab('friends')">
+      <span class="nav-icon">👥</span><span class="nav-label">好友</span>
+    </button>
+    <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
+      <span class="nav-icon">⚙️</span><span class="nav-label">设置</span>
+    </button>
   </nav>
 
 </div>
 
-<div id="toast" class="toast hidden"></div>
-
-<!-- 大图查看 -->
-<div id="image-modal" class="modal hidden">
-  <button class="modal-close" id="modal-close">×</button>
-  <img id="modal-img" alt="">
+<!-- 详情页 -->
+<div id="detail-view" class="detail-view" style="display:none;">
+  <div class="detail-card" id="detail-content"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="config.js?v=3"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
