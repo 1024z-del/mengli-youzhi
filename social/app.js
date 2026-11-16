@@ -129,6 +129,41 @@ window.addEventListener('popstate', (e) => {
   }
 });
 
+// ---- 写入队列：防止并发写入冲突 ----
+// posts.json 写入队列
+let postsWriteChain = Promise.resolve();
+function enqueuePostsWrite(operation) {
+  postsWriteChain = postsWriteChain.then(async () => {
+    try {
+      const { content, sha } = await ghGetFile('data/posts.json');
+      const modified = await operation(content || []);
+      const r = await ghPutFile('data/posts.json', modified, sha);
+      if (r && r.content && r.content.sha) postsShaCache = r.content.sha;
+      allPostsCache = modified;
+    } catch (e) {
+      console.error('posts写入失败', e);
+    }
+  });
+  return postsWriteChain;
+}
+
+// notifications.json 写入队列
+let notifsWriteChain = Promise.resolve();
+function enqueueNotifsWrite(operation) {
+  notifsWriteChain = notifsWriteChain.then(async () => {
+    try {
+      const { content, sha } = await ghGetFile('data/notifications.json');
+      const modified = await operation(content || []);
+      const r = await ghPutFile('data/notifications.json', modified, sha);
+      if (r && r.content && r.content.sha) notifsShaCache = r.content.sha;
+      notifsCache = modified;
+    } catch (e) {
+      console.error('notifications写入失败', e);
+    }
+  });
+  return notifsWriteChain;
+}
+
 function setUser(u) {
   currentUser = u;
   localStorage.setItem('mlyz_user', JSON.stringify(u));
@@ -311,11 +346,13 @@ async function deleteSelected() {
   }
   if (!confirm(`确定删除选中的 ${selectedPostIds.size} 篇日记吗？\n（删除后会在云端回收站保留 30 天）`)) return;
 
-  const { content: posts, sha } = await ghGetFile('data/posts.json');
-  const toDelete = posts.filter(p => selectedPostIds.has(p.id));
-  const filtered = posts.filter(p => !selectedPostIds.has(p.id));
+  const toDelete = allPostsCache.filter(p => selectedPostIds.has(p.id));
 
-  // 移到回收站
+  // 乐观更新本地缓存
+  allPostsCache = allPostsCache.filter(p => !selectedPostIds.has(p.id));
+  loadPosts();
+
+  // 移到回收站（单独写入 trash.json）
   try {
     const { content: trash, sha: trashSha } = await ghGetFile('data/trash.json');
     const trashList = trash || [];
@@ -331,9 +368,10 @@ async function deleteSelected() {
     console.error('回收站写入失败', e);
   }
 
-  await ghPutFile('data/posts.json', filtered, sha);
-  allPostsCache = filtered;
-  postsShaCache = null;
+  // 通过队列从 posts.json 删除
+  await enqueuePostsWrite((serverPosts) => {
+    return serverPosts.filter(p => !selectedPostIds.has(p.id));
+  });
 
   selectedPostIds.clear();
   showToast('🗑️ 已移到回收站（保留 30 天）');
@@ -479,37 +517,30 @@ async function toggleLike(postId) {
   }
   const wasLiked = !liked;
   refreshPostViews();
-  // 后台同步到 GitHub
-  (async () => {
-    try {
-      const { content: serverPosts, sha } = await ghGetFile('data/posts.json');
-      const serverPost = (serverPosts || []).find(p => p.id === postId);
-      if (serverPost) {
-        serverPost.likes = serverPost.likes || [];
-        if (wasLiked && !serverPost.likes.includes(currentUser.id)) {
-          serverPost.likes.push(currentUser.id);
-        } else if (!wasLiked) {
-          serverPost.likes = serverPost.likes.filter(uid => uid !== currentUser.id);
-        }
-        // 同时把本地缓存里的其他变更也合并过去
-        const r = await ghPutFile('data/posts.json', serverPosts, sha);
-        if (r && r.content && r.content.sha) postsShaCache = r.content.sha;
-        // 点赞通知（不给自己发）
-        if (wasLiked && serverPost.authorId !== currentUser.id) {
-          await addNotification({
-            userId: serverPost.authorId,
-            type: 'like',
-            fromUserId: currentUser.id,
-            fromUsername: currentUser.username,
-            postId: serverPost.id,
-            postText: serverPost.text
-          });
-        }
+  // 通过队列同步到 GitHub（防止并发冲突）
+  enqueuePostsWrite((serverPosts) => {
+    const serverPost = serverPosts.find(p => p.id === postId);
+    if (serverPost) {
+      serverPost.likes = serverPost.likes || [];
+      if (wasLiked && !serverPost.likes.includes(currentUser.id)) {
+        serverPost.likes.push(currentUser.id);
+      } else if (!wasLiked) {
+        serverPost.likes = serverPost.likes.filter(uid => uid !== currentUser.id);
       }
-    } catch (e) {
-      console.error('点赞同步失败', e);
+      // 点赞通知（不给自己发）
+      if (wasLiked && serverPost.authorId !== currentUser.id) {
+        addNotification({
+          userId: serverPost.authorId,
+          type: 'like',
+          fromUserId: currentUser.id,
+          fromUsername: currentUser.username,
+          postId: serverPost.id,
+          postText: serverPost.text
+        });
+      }
     }
-  })();
+    return serverPosts;
+  });
 }
 
 // 刷新动态列表和详情页（不重新请求 GitHub）
@@ -605,44 +636,39 @@ async function addComment(postId) {
   input.value = '';
   // 乐观刷新界面
   refreshPostViews();
-  // 后台同步到 GitHub
-  (async () => {
-    try {
-      const { content: serverPosts, sha } = await ghGetFile('data/posts.json');
-      const serverPost = (serverPosts || []).find(p => p.id === postId);
-      if (serverPost) {
-        serverPost.comments = serverPost.comments || [];
-        serverPost.comments.push(comment);
-        await ghPutFile('data/posts.json', serverPosts, sha);
-      }
-      // 通知作者
-      if (post.authorId !== currentUser.id) {
-        await addNotification({
-          userId: post.authorId,
-          type: 'comment',
-          fromUserId: currentUser.id,
-          fromUsername: currentUser.username,
-          postId: post.id,
-          postText: post.text,
-          commentText: text
-        });
-      }
-      // 通知被回复的人
-      if (savedReplyTo && savedReplyTo.userId !== currentUser.id && savedReplyTo.userId !== post.authorId) {
-        await addNotification({
-          userId: savedReplyTo.userId,
-          type: 'comment',
-          fromUserId: currentUser.id,
-          fromUsername: currentUser.username,
-          postId: post.id,
-          postText: post.text,
-          commentText: `回复了你：${text}`
-        });
-      }
-    } catch (e) {
-      console.error('评论同步失败', e);
+  // 通过队列同步到 GitHub（防止并发冲突）
+  enqueuePostsWrite((serverPosts) => {
+    const serverPost = serverPosts.find(p => p.id === postId);
+    if (serverPost) {
+      serverPost.comments = serverPost.comments || [];
+      serverPost.comments.push(comment);
     }
-  })();
+    return serverPosts;
+  }).then(() => {
+    // 写入完成后发通知
+    if (post.authorId !== currentUser.id) {
+      addNotification({
+        userId: post.authorId,
+        type: 'comment',
+        fromUserId: currentUser.id,
+        fromUsername: currentUser.username,
+        postId: post.id,
+        postText: post.text,
+        commentText: text
+      });
+    }
+    if (savedReplyTo && savedReplyTo.userId !== currentUser.id && savedReplyTo.userId !== post.authorId) {
+      addNotification({
+        userId: savedReplyTo.userId,
+        type: 'comment',
+        fromUserId: currentUser.id,
+        fromUsername: currentUser.username,
+        postId: post.id,
+        postText: post.text,
+        commentText: `回复了你：${text}`
+      });
+    }
+  });
 }
 
 function replyToComment(userId, username) {
@@ -668,37 +694,26 @@ function cancelReply() {
 }
 
 // ---- 通知 ----
-async function addNotification({ userId, type, fromUserId, fromUsername, postId, postText, commentText }) {
-  try {
-    const newNotif = {
-      id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 4),
-      userId,
-      type,
-      fromUserId,
-      fromUsername,
-      postId,
-      postText: (postText || '').slice(0, 30),
-      commentText: commentText || '',
-      read: false,
-      createdAt: new Date().toISOString()
-    };
-    // 更新本地缓存
-    notifsCache.push(newNotif);
-    // 后台写入 GitHub
-    (async () => {
-      try {
-        const { content, sha } = await ghGetFile('data/notifications.json');
-        const list = content || [];
-        list.push(newNotif);
-        const trimmed = list.slice(-200);
-        const r = await ghPutFile('data/notifications.json', trimmed, sha);
-        if (r && r.content && r.content.sha) notifsShaCache = r.content.sha;
-        notifsCache = trimmed;
-      } catch (e) { console.error('通知写入失败', e); }
-    })();
-  } catch (e) {
-    console.error('通知失败', e);
-  }
+function addNotification({ userId, type, fromUserId, fromUsername, postId, postText, commentText }) {
+  const newNotif = {
+    id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 4),
+    userId,
+    type,
+    fromUserId,
+    fromUsername,
+    postId,
+    postText: (postText || '').slice(0, 30),
+    commentText: commentText || '',
+    read: false,
+    createdAt: new Date().toISOString()
+  };
+  // 更新本地缓存
+  notifsCache.push(newNotif);
+  // 通过队列写入 GitHub（防止并发冲突）
+  enqueueNotifsWrite((list) => {
+    list.push(newNotif);
+    return list.slice(-200);
+  });
 }
 
 async function loadNotifications() {
@@ -764,23 +779,12 @@ async function markNotifRead(notifId) {
   }
   // 打开日记（用缓存，秒开）
   if (postId) viewPost(postId);
-  // 后台同步到 GitHub
-  (async () => {
-    try {
-      if (!notifsShaCache) {
-        const { content, sha } = await ghGetFile('data/notifications.json');
-        notifsCache = content || [];
-        notifsShaCache = sha;
-        const target = notifsCache.find(x => x.id === notifId);
-        if (target) target.read = true;
-      } else {
-        const target = notifsCache.find(x => x.id === notifId);
-        if (target) target.read = true;
-      }
-      const r = await ghPutFile('data/notifications.json', notifsCache, notifsShaCache);
-      if (r && r.content && r.content.sha) notifsShaCache = r.content.sha;
-    } catch (e) { console.error('标记已读同步失败', e); }
-  })();
+  // 通过队列同步到 GitHub
+  enqueueNotifsWrite((list) => {
+    const target = list.find(x => x.id === notifId);
+    if (target) target.read = true;
+    return list;
+  });
 }
 
 function closeDetail() {
@@ -897,9 +901,15 @@ async function publishPost() {
       createdAt: new Date().toISOString()
     };
 
-    const { content: posts, sha } = await ghGetFile('data/posts.json');
-    posts.push(post);
-    await ghPutFile('data/posts.json', posts, sha);
+    // 乐观更新本地缓存
+    allPostsCache.push(post);
+    loadPosts(); // 刷新界面
+
+    // 通过队列写入 GitHub
+    await enqueuePostsWrite((serverPosts) => {
+      serverPosts.push(post);
+      return serverPosts;
+    });
 
     // Reset form
     pendingImage = null;
@@ -1252,7 +1262,6 @@ async function doImport() {
   }
   if (!confirm(`确定导入 ${importData.posts.length} 篇日记吗？`)) return;
 
-  const { content: posts, sha } = await ghGetFile('data/posts.json');
   // 重新生成 id，避免冲突；作者改为当前用户
   const newPosts = importData.posts.map(p => ({
     ...p,
@@ -1262,8 +1271,13 @@ async function doImport() {
     authorAvatar: currentUser.avatar || null,
     createdAt: p.createdAt || new Date().toISOString()
   }));
-  const merged = [...(posts || []), ...newPosts];
-  await ghPutFile('data/posts.json', merged, sha);
+  // 乐观更新本地缓存
+  allPostsCache = [...allPostsCache, ...newPosts];
+  loadPosts();
+  // 通过队列写入 GitHub
+  await enqueuePostsWrite((serverPosts) => {
+    return [...serverPosts, ...newPosts];
+  });
 
   importData = null;
   closeImportModal();
@@ -1365,13 +1379,15 @@ async function restoreTrashItem(postId) {
   // 从回收站移除
   const newTrash = trash.filter(t => t.id !== postId);
   await ghPutFile('data/trash.json', newTrash, trashSha);
-  // 加回 posts.json
-  const { content: posts, sha: postsSha } = await ghGetFile('data/posts.json');
+  // 加回 posts.json（通过队列）
   const { deletedAt, ...restored } = item;
-  posts.push(restored);
-  await ghPutFile('data/posts.json', posts, postsSha);
-  allPostsCache = posts;
-  postsShaCache = null;
+  allPostsCache.push(restored);
+  await enqueuePostsWrite((serverPosts) => {
+    if (!serverPosts.find(p => p.id === restored.id)) {
+      serverPosts.push(restored);
+    }
+    return serverPosts;
+  });
   showToast('♻️ 已恢复');
   loadTrashList();
   loadPosts();
@@ -1601,16 +1617,23 @@ async function saveProfile() {
     }
     await ghPutFile('data/users.json', users, sha);
 
-    // 如果昵称或头像变了，更新所有该用户的日记
+    // 如果昵称或头像变了，更新所有该用户的日记（通过队列）
     if (newUsername !== oldName || avatarUrl !== currentUser.avatar) {
-      const { content: posts, sha: postsSha } = await ghGetFile('data/posts.json');
-      posts.forEach(p => {
+      allPostsCache.forEach(p => {
         if (p.authorId === currentUser.id) {
           p.authorName = newUsername;
           p.authorAvatar = avatarUrl;
         }
       });
-      await ghPutFile('data/posts.json', posts, postsSha);
+      await enqueuePostsWrite((serverPosts) => {
+        serverPosts.forEach(p => {
+          if (p.authorId === currentUser.id) {
+            p.authorName = newUsername;
+            p.authorAvatar = avatarUrl;
+          }
+        });
+        return serverPosts;
+      });
     }
 
     // 更新本地登录态
