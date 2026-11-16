@@ -502,6 +502,24 @@ main {
   margin-bottom: 5px;
 }
 
+/* ========== 存储警告条 ========== */
+.storage-warning {
+  background: #ffebee;
+  color: #c0392b;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  border-bottom: 1px solid #ffcdd2;
+}
+
+.diary-count {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
 /* ========== 设置页 ========== */
 .card-title {
   font-size: 16px;

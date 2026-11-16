@@ -43,9 +43,22 @@ function loadData(key, defaultValue) {
 function saveData(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch (e) {
     console.error('saveData error:', e);
-    showToast('❌ 存储失败，可能是空间满了');
+    return false;
+  }
+}
+
+// 检测浏览器是否允许存储数据（无痕模式 / 存储被禁用时会失败）
+function isStorageAvailable() {
+  try {
+    const testKey = '__mlyz_test__';
+    localStorage.setItem(testKey, '1');
+    localStorage.removeItem(testKey);
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -430,7 +443,11 @@ function publishDiary() {
 
   const diaries = loadData(STORAGE_KEYS.DIARIES, []);
   diaries.unshift(diary); // 新日记放最前
-  saveData(STORAGE_KEYS.DIARIES, diaries);
+
+  if (!saveData(STORAGE_KEYS.DIARIES, diaries)) {
+    showToast('❌ 保存失败！浏览器不允许存数据，请换普通模式（不要用无痕）', 4000);
+    return;
+  }
 
   showToast('✨ 发布成功！');
   resetPublishForm();
@@ -481,6 +498,7 @@ function initDiaryList() {
 function renderDiaryList() {
   const container = $('#diary-list');
   const emptyTip = $('#empty-tip');
+  const countEl = $('#diary-count');
   container.innerHTML = '';
 
   const diaries = loadData(STORAGE_KEYS.DIARIES, []);
@@ -489,6 +507,10 @@ function renderDiaryList() {
   let filtered = diaries;
   if (state.currentFilter !== 'all') {
     filtered = diaries.filter(d => d.visibility === state.currentFilter);
+  }
+
+  if (countEl) {
+    countEl.textContent = `共 ${filtered.length} 篇日记`;
   }
 
   if (filtered.length === 0) {
@@ -706,9 +728,12 @@ function initSettings() {
       showToast('⏳ 正在拉取...', 2000);
       const result = await GistSync.restore();
       if (result.ok) {
-        saveData(STORAGE_KEYS.DIARIES, result.diaries);
-        showToast(result.message, 2500);
-        renderDiaryList();
+        if (!saveData(STORAGE_KEYS.DIARIES, result.diaries)) {
+          showToast('❌ 恢复失败：浏览器不允许存数据', 3000);
+        } else {
+          showToast(result.message, 2500);
+          renderDiaryList();
+        }
       } else {
         showToast(result.message, 2500);
       }
@@ -850,6 +875,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!state.authenticated) {
       setTimeout(tryInit, 300);
       return;
+    }
+
+    // 检测存储是否可用（无痕模式 / 存储被禁用）
+    if (!isStorageAvailable()) {
+      const warn = $('#storage-warning');
+      if (warn) warn.classList.remove('hidden');
     }
 
     initTabs();
