@@ -216,6 +216,7 @@ function isFriend(a, b) {
 let manageMode = false;
 let selectedPostIds = new Set();
 let allPostsCache = [];
+let postsShaCache = null;
 
 function enterManageMode() {
   manageMode = true;
@@ -270,8 +271,9 @@ async function deleteSelected() {
 async function loadPosts() {
   if (!currentUser) return;
   await loadFriendships();
-  const { content: posts } = await ghGetFile('data/posts.json');
+  const { content: posts, sha } = await ghGetFile('data/posts.json');
   allPostsCache = posts || [];
+  postsShaCache = sha;
   const visible = (posts || []).filter(p => canViewPost(p, currentUser.id));
   visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   renderFeed(visible);
@@ -362,13 +364,95 @@ function formatTime(t) {
 // ---- View post detail ----
 async function viewPost(id) {
   currentDetailPostId = id;
-  const { content: posts } = await ghGetFile('data/posts.json');
-  const post = posts.find(p => p.id === id);
-  if (!post) return;
-  if (!canViewPost(post, currentUser.id)) {
-    alert('无权查看');
+  // 优先用缓存，没有再请求 GitHub
+  const cached = allPostsCache.find(p => p.id === id);
+  if (cached) {
+    if (!canViewPost(cached, currentUser.id)) { alert('无权查看'); return; }
+    renderPostDetail(id);
+    document.getElementById('detail-view').style.display = 'flex';
+    // 后台静默刷新最新数据
+    (async () => {
+      try {
+        const { content: posts, sha } = await ghGetFile('data/posts.json');
+        allPostsCache = posts || [];
+        postsShaCache = sha;
+        renderPostDetail(id);
+      } catch (e) { console.error('刷新详情失败', e); }
+    })();
     return;
   }
+  const { content: posts, sha } = await ghGetFile('data/posts.json');
+  allPostsCache = posts || [];
+  postsShaCache = sha;
+  const post = posts.find(p => p.id === id);
+  if (!post) return;
+  if (!canViewPost(post, currentUser.id)) { alert('无权查看'); return; }
+  renderPostDetail(id);
+  document.getElementById('detail-view').style.display = 'flex';
+}
+
+// ---- 点赞（乐观更新） ----
+async function toggleLike(postId) {
+  const post = allPostsCache.find(p => p.id === postId);
+  if (!post) return;
+  post.likes = post.likes || [];
+  const liked = post.likes.includes(currentUser.id);
+  // 乐观更新：立即改本地缓存并刷新界面
+  if (liked) {
+    post.likes = post.likes.filter(uid => uid !== currentUser.id);
+  } else {
+    post.likes.push(currentUser.id);
+  }
+  const wasLiked = !liked;
+  refreshPostViews();
+  // 后台同步到 GitHub
+  (async () => {
+    try {
+      const { content: serverPosts, sha } = await ghGetFile('data/posts.json');
+      const serverPost = (serverPosts || []).find(p => p.id === postId);
+      if (serverPost) {
+        serverPost.likes = serverPost.likes || [];
+        if (wasLiked && !serverPost.likes.includes(currentUser.id)) {
+          serverPost.likes.push(currentUser.id);
+        } else if (!wasLiked) {
+          serverPost.likes = serverPost.likes.filter(uid => uid !== currentUser.id);
+        }
+        // 同时把本地缓存里的其他变更也合并过去
+        const r = await ghPutFile('data/posts.json', serverPosts, sha);
+        if (r && r.content && r.content.sha) postsShaCache = r.content.sha;
+        // 点赞通知（不给自己发）
+        if (wasLiked && serverPost.authorId !== currentUser.id) {
+          await addNotification({
+            userId: serverPost.authorId,
+            type: 'like',
+            fromUserId: currentUser.id,
+            fromUsername: currentUser.username,
+            postId: serverPost.id,
+            postText: serverPost.text
+          });
+        }
+      }
+    } catch (e) {
+      console.error('点赞同步失败', e);
+    }
+  })();
+}
+
+// 刷新动态列表和详情页（不重新请求 GitHub）
+function refreshPostViews() {
+  const visible = allPostsCache.filter(p => canViewPost(p, currentUser.id));
+  visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  renderFeed(visible);
+  if (document.getElementById('detail-view').style.display === 'flex' && currentDetailPostId) {
+    renderPostDetail(currentDetailPostId);
+  }
+}
+
+// 用缓存渲染详情页（不请求 GitHub）
+function renderPostDetail(id) {
+  const post = allPostsCache.find(p => p.id === id);
+  if (!post) return;
+  if (!canViewPost(post, currentUser.id)) { alert('无权查看'); return; }
   const liked = (post.likes || []).includes(currentUser.id);
   const comments = post.comments || [];
   document.getElementById('detail-content').innerHTML = `
@@ -419,47 +503,14 @@ async function viewPost(id) {
     </div>
     <button onclick="closeDetail()" class="btn-secondary">返回</button>
   `;
-  document.getElementById('detail-view').style.display = 'flex';
 }
 
-// ---- 点赞 ----
-async function toggleLike(postId) {
-  const { content: posts, sha } = await ghGetFile('data/posts.json');
-  const post = posts.find(p => p.id === postId);
-  if (!post) return;
-  post.likes = post.likes || [];
-  const idx = post.likes.indexOf(currentUser.id);
-  if (idx >= 0) {
-    post.likes.splice(idx, 1);
-  } else {
-    post.likes.push(currentUser.id);
-    // 给作者发通知（不给自己发）
-    if (post.authorId !== currentUser.id) {
-      await addNotification({
-        userId: post.authorId,
-        type: 'like',
-        fromUserId: currentUser.id,
-        fromUsername: currentUser.username,
-        postId: post.id,
-        postText: post.text
-      });
-    }
-  }
-  await ghPutFile('data/posts.json', posts, sha);
-  // 刷新当前视图
-  if (document.getElementById('detail-view').style.display === 'flex') {
-    viewPost(postId);
-  }
-  loadPosts();
-}
-
-// ---- 评论 ----
+// ---- 评论（乐观更新） ----
 async function addComment(postId) {
   const input = document.getElementById('comment-input');
   const text = input.value.trim();
   if (!text) return;
-  const { content: posts, sha } = await ghGetFile('data/posts.json');
-  const post = posts.find(p => p.id === postId);
+  const post = allPostsCache.find(p => p.id === postId);
   if (!post) return;
   post.comments = post.comments || [];
   const comment = {
@@ -475,34 +526,49 @@ async function addComment(postId) {
     comment.replyToUsername = replyToUser.username;
   }
   post.comments.push(comment);
-  await ghPutFile('data/posts.json', posts, sha);
-  // 通知作者
-  if (post.authorId !== currentUser.id) {
-    await addNotification({
-      userId: post.authorId,
-      type: 'comment',
-      fromUserId: currentUser.id,
-      fromUsername: currentUser.username,
-      postId: post.id,
-      postText: post.text,
-      commentText: text
-    });
-  }
-  // 通知被回复的人（如果不是作者也不是自己）
-  if (replyToUser && replyToUser.userId !== currentUser.id && replyToUser.userId !== post.authorId) {
-    await addNotification({
-      userId: replyToUser.userId,
-      type: 'comment',
-      fromUserId: currentUser.id,
-      fromUsername: currentUser.username,
-      postId: post.id,
-      postText: post.text,
-      commentText: `回复了你：${text}`
-    });
-  }
+  const savedReplyTo = replyToUser;
   replyToUser = null;
-  viewPost(postId);
-  loadPosts();
+  input.value = '';
+  // 乐观刷新界面
+  refreshPostViews();
+  // 后台同步到 GitHub
+  (async () => {
+    try {
+      const { content: serverPosts, sha } = await ghGetFile('data/posts.json');
+      const serverPost = (serverPosts || []).find(p => p.id === postId);
+      if (serverPost) {
+        serverPost.comments = serverPost.comments || [];
+        serverPost.comments.push(comment);
+        await ghPutFile('data/posts.json', serverPosts, sha);
+      }
+      // 通知作者
+      if (post.authorId !== currentUser.id) {
+        await addNotification({
+          userId: post.authorId,
+          type: 'comment',
+          fromUserId: currentUser.id,
+          fromUsername: currentUser.username,
+          postId: post.id,
+          postText: post.text,
+          commentText: text
+        });
+      }
+      // 通知被回复的人
+      if (savedReplyTo && savedReplyTo.userId !== currentUser.id && savedReplyTo.userId !== post.authorId) {
+        await addNotification({
+          userId: savedReplyTo.userId,
+          type: 'comment',
+          fromUserId: currentUser.id,
+          fromUsername: currentUser.username,
+          postId: post.id,
+          postText: post.text,
+          commentText: `回复了你：${text}`
+        });
+      }
+    } catch (e) {
+      console.error('评论同步失败', e);
+    }
+  })();
 }
 
 function replyToComment(userId, username) {
