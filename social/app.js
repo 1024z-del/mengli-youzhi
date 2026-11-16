@@ -119,6 +119,7 @@ function setUser(u) {
 }
 
 function logout() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   currentUser = null;
   localStorage.removeItem('mlyz_user');
   showAuth();
@@ -1613,7 +1614,61 @@ function showApp() {
   loadPosts();
   loadNotifications();
   cleanupOldTrash();
+  startPolling();
 }
+
+// ---- 后台轮询：实时接收新消息和新动态 ----
+let pollTimer = null;
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  // 每 15 秒检查一次新通知和新动态
+  pollTimer = setInterval(async () => {
+    if (!currentUser) return;
+    try {
+      // 刷新通知
+      const { content: notifs, sha } = await ghGetFile('data/notifications.json');
+      notifsCache = notifs || [];
+      notifsShaCache = sha;
+      if (document.getElementById('notifications-list')) {
+        renderNotifications();
+      } else {
+        updateNotifBadge();
+      }
+    } catch (e) { /* 静默 */ }
+    try {
+      // 刷新动态（只在动态页时重渲染，其他时候只更新缓存）
+      const { content: posts, sha: psha } = await ghGetFile('data/posts.json');
+      allPostsCache = posts || [];
+      postsShaCache = psha;
+      const feedTab = document.getElementById('tab-feed');
+      if (feedTab && feedTab.style.display !== 'none') {
+        const visible = posts.filter(p => canViewPost(p, currentUser.id));
+        visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        renderFeed(visible);
+      }
+    } catch (e) { /* 静默 */ }
+  }, 15000);
+}
+
+function updateNotifBadge() {
+  const list = notifsCache.filter(n => n.userId === currentUser.id && !n.read);
+  const badge = document.getElementById('notif-badge');
+  if (badge) {
+    if (list.length > 0) {
+      badge.textContent = list.length > 99 ? '99+' : list.length;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
+
+// 从后台切回前台时立即刷新
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentUser) {
+    loadNotifications();
+  }
+});
 
 function switchTab(tab) {
   document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
