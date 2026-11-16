@@ -143,7 +143,8 @@ async function doSignup() {
     if (error) { showToast('注册失败：' + error.message, 3000); return; }
 
     if (!data.session) {
-      showToast('注册成功，但需要邮箱验证。请到 Supabase 关闭邮箱验证后再试', 5000);
+      showToast('注册成功！请去邮箱点击确认链接，然后回来登录', 6000);
+      switchAuthTab('login');
       return;
     }
 
