@@ -85,6 +85,38 @@ function fileToBase64(file) {
   });
 }
 
+// 压缩图片：缩放到最大边 maxDim，转 JPEG，避免超出浏览器存储上限
+function compressImage(file, maxDim = 1200, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const scale = Math.min(1, maxDim / Math.max(width, height));
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        try {
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
@@ -352,19 +384,22 @@ function initPublish() {
     });
   });
 
-  // 图片上传
+  // 图片上传（自动压缩，避免超出手机浏览器 5MB 存储上限）
   $('#btn-image').addEventListener('click', () => $('#file-image').click());
   $('#file-image').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    showToast('⏳ 正在处理图片...', 1200);
     try {
-      const base64 = await fileToBase64(file);
+      const base64 = await compressImage(file, 1200, 0.8);
       state.currentImage = base64;
       $('#preview-img').src = base64;
       $('#image-preview').classList.remove('hidden');
-      showToast('📷 图片已添加');
+      const kb = Math.round(base64.length / 1024);
+      showToast(`📷 图片已添加（${kb}KB）`);
     } catch (err) {
-      showToast('❌ 图片读取失败');
+      console.error(err);
+      showToast('❌ 图片处理失败，换一张试试');
     }
     e.target.value = '';
   });
@@ -556,6 +591,7 @@ function createDiaryItem(diary) {
     ${mediaHtml}
     ${stickerHtml}
     <div class="diary-actions">
+      <button class="view-btn" data-view-detail="${diary.id}">👀 查看详情</button>
       <button class="delete-btn" data-delete="${diary.id}">🗑️ 删除</button>
     </div>
   `;
@@ -563,13 +599,28 @@ function createDiaryItem(diary) {
   // 图片点击放大
   const img = div.querySelector('img[data-view="image"]');
   if (img) {
-    img.addEventListener('click', () => openImageModal(diary.image));
+    img.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openImageModal(diary.image);
+    });
+  }
+
+  // 点整张卡片 / 查看详情 → 打开详情
+  div.style.cursor = 'pointer';
+  div.addEventListener('click', () => openDiaryDetail(diary));
+  const viewBtn = div.querySelector('[data-view-detail]');
+  if (viewBtn) {
+    viewBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openDiaryDetail(diary);
+    });
   }
 
   // 删除按钮
   const delBtn = div.querySelector('[data-delete]');
   if (delBtn) {
-    delBtn.addEventListener('click', () => {
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       confirmModal('确认删除？', '这篇日记删了就找不回来了哦', () => {
         deleteDiary(diary.id);
       });
@@ -611,6 +662,60 @@ function openImageModal(src) {
   $('#image-modal').classList.remove('hidden');
 }
 
+// ========== 日记详情 ==========
+
+function openDiaryDetail(diary) {
+  const body = $('#detail-body');
+  const visText = {
+    private: '🔒 仅自己',
+    invite: '📩 邀请可见',
+    public: '🌐 公开'
+  }[diary.visibility] || diary.visibility;
+
+  let mediaHtml = '';
+  if (diary.image) {
+    mediaHtml = `<div class="detail-media"><img src="${diary.image}" alt="图片" id="detail-img"></div>`;
+  } else if (diary.video) {
+    mediaHtml = `<div class="detail-media"><video src="${diary.video}" controls playsinline></video></div>`;
+  }
+
+  let stickerHtml = '';
+  if (diary.stickers && diary.stickers.length > 0) {
+    stickerHtml = `<div class="detail-stickers">${diary.stickers.join('')}</div>`;
+  }
+
+  let inviteHtml = '';
+  if (diary.visibility === 'invite' && diary.inviteCodes && diary.inviteCodes.length > 0) {
+    inviteHtml = `<div class="detail-invite">邀请码：${escapeHtml(diary.inviteCodes.join('、'))}</div>`;
+  }
+
+  body.innerHTML = `
+    <div class="detail-header">
+      <span class="detail-date">${formatDate(diary.createdAt)}</span>
+      <span class="diary-visibility ${diary.visibility}">${visText}</span>
+    </div>
+    ${diary.text ? `<div class="detail-text">${escapeHtml(diary.text)}</div>` : ''}
+    ${mediaHtml}
+    ${stickerHtml}
+    ${inviteHtml}
+  `;
+
+  const detailImg = $('#detail-img');
+  if (detailImg) {
+    detailImg.addEventListener('click', () => openImageModal(diary.image));
+  }
+
+  $('#detail-modal').classList.remove('hidden');
+}
+
+function initDetailModal() {
+  const modal = $('#detail-modal');
+  $('#detail-close').addEventListener('click', () => modal.classList.add('hidden'));
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.classList.add('hidden');
+  });
+}
+
 // ========== 设置页 ==========
 
 function initSettings() {
@@ -620,20 +725,26 @@ function initSettings() {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 3 * 1024 * 1024) {
-      showToast('❌ 图片太大啦，最多 3MB');
+    if (file.size > 20 * 1024 * 1024) {
+      showToast('❌ 图片太大啦，最多 20MB');
       e.target.value = '';
       return;
     }
 
+    showToast('⏳ 正在处理背景图...', 1200);
     try {
-      const base64 = await fileToBase64(file);
-      saveData(STORAGE_KEYS.BG_IMAGE, base64);
-      applyBackground();
-      loadSettingsView();
-      showToast('🖼️ 背景已更新');
+      // 压缩后再存，避免超出浏览器存储上限
+      const base64 = await compressImage(file, 1600, 0.8);
+      if (!saveData(STORAGE_KEYS.BG_IMAGE, base64)) {
+        showToast('❌ 背景保存失败，换张小一点的图片', 3000);
+      } else {
+        applyBackground();
+        loadSettingsView();
+        showToast('🖼️ 背景已更新');
+      }
     } catch (err) {
-      showToast('❌ 图片读取失败');
+      console.error(err);
+      showToast('❌ 图片处理失败');
     }
     e.target.value = '';
   });
@@ -887,6 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initPublish();
     initDiaryList();
     initImageModal();
+    initDetailModal();
     initSettings();
     applyBackground();
 
