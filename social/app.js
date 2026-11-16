@@ -77,6 +77,8 @@ async function hashPwd(pwd) {
 
 // ---- Auth state ----
 let currentUser = JSON.parse(localStorage.getItem('mlyz_user') || 'null');
+let replyToUser = null; // { userId, username } 当前回复目标
+let currentDetailPostId = null; // 当前打开的日记 ID
 
 function setUser(u) {
   currentUser = u;
@@ -359,6 +361,7 @@ function formatTime(t) {
 
 // ---- View post detail ----
 async function viewPost(id) {
+  currentDetailPostId = id;
   const { content: posts } = await ghGetFile('data/posts.json');
   const post = posts.find(p => p.id === id);
   if (!post) return;
@@ -389,20 +392,27 @@ async function viewPost(id) {
     <div class="comment-section">
       <h4 style="font-size:14px;color:#666;margin-bottom:10px;">评论 (${comments.length})</h4>
       ${comments.length ? comments.map(c => `
-        <div class="comment-item">
+        <div class="comment-item" onclick="replyToComment('${c.userId}','${escapeHtml(c.username).replace(/'/g, "\\'")}')">
           ${getAvatarHtml(c.username, c.avatar)}
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:600;color:#333;">
               ${escapeHtml(c.username)}
               ${c.userId === post.authorId ? '<span style="font-size:10px;background:#6c5ce7;color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:normal;">作者</span>' : ''}
             </div>
-            <div style="font-size:14px;color:#444;margin:2px 0;word-break:break-word;">${escapeHtml(c.text)}</div>
-            <div style="font-size:11px;color:#999;">${formatTime(c.createdAt)}</div>
+            <div style="font-size:14px;color:#444;margin:2px 0;word-break:break-word;">
+              ${c.replyToUsername ? `<span style="color:#6c5ce7;font-size:12px;">回复 @${escapeHtml(c.replyToUsername)}：</span>` : ''}
+              ${escapeHtml(c.text)}
+            </div>
+            <div style="font-size:11px;color:#999;">${formatTime(c.createdAt)} <span style="color:#bbb;">· 点击回复</span></div>
           </div>
         </div>
       `).join('') : '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">还没有评论，来抢沙发吧～</p>'}
+      <div class="comment-input-row" id="reply-bar" style="${replyToUser ? 'display:flex;' : 'display:none;'}">
+        <span style="font-size:12px;color:#6c5ce7;margin-right:6px;">回复 @${replyToUser ? escapeHtml(replyToUser.username) : ''}</span>
+        <button onclick="cancelReply()" style="font-size:12px;color:#999;background:none;border:none;cursor:pointer;margin-right:8px;">✕</button>
+      </div>
       <div class="comment-input-row">
-        <input type="text" id="comment-input" placeholder="说点什么..." style="flex:1;padding:10px;border:1px solid #eee;border-radius:20px;outline:none;">
+        <input type="text" id="comment-input" placeholder="${replyToUser ? '回复 @' + escapeHtml(replyToUser.username) + '...' : '说点什么...'}" style="flex:1;padding:10px;border:1px solid #eee;border-radius:20px;outline:none;" onkeydown="if(event.key==='Enter')addComment('${post.id}')">
         <button onclick="addComment('${post.id}')" style="margin-left:8px;padding:10px 16px;background:#6c5ce7;color:#fff;border:none;border-radius:20px;cursor:pointer;">发送</button>
       </div>
     </div>
@@ -451,16 +461,21 @@ async function addComment(postId) {
   const post = posts.find(p => p.id === postId);
   if (!post) return;
   post.comments = post.comments || [];
-  post.comments.push({
+  const comment = {
     id: 'c_' + Date.now(),
     userId: currentUser.id,
     username: currentUser.username,
     avatar: currentUser.avatar || null,
     text,
     createdAt: new Date().toISOString()
-  });
+  };
+  if (replyToUser) {
+    comment.replyToUserId = replyToUser.userId;
+    comment.replyToUsername = replyToUser.username;
+  }
+  post.comments.push(comment);
   await ghPutFile('data/posts.json', posts, sha);
-  // 给作者发通知（不给自己发）
+  // 通知作者
   if (post.authorId !== currentUser.id) {
     await addNotification({
       userId: post.authorId,
@@ -472,8 +487,36 @@ async function addComment(postId) {
       commentText: text
     });
   }
+  // 通知被回复的人（如果不是作者也不是自己）
+  if (replyToUser && replyToUser.userId !== currentUser.id && replyToUser.userId !== post.authorId) {
+    await addNotification({
+      userId: replyToUser.userId,
+      type: 'comment',
+      fromUserId: currentUser.id,
+      fromUsername: currentUser.username,
+      postId: post.id,
+      postText: post.text,
+      commentText: `回复了你：${text}`
+    });
+  }
+  replyToUser = null;
   viewPost(postId);
   loadPosts();
+}
+
+function replyToComment(userId, username) {
+  if (userId === currentUser.id) return; // 不能回复自己
+  replyToUser = { userId, username };
+  viewPost(currentDetailPostId);
+  setTimeout(() => {
+    const input = document.getElementById('comment-input');
+    if (input) input.focus();
+  }, 100);
+}
+
+function cancelReply() {
+  replyToUser = null;
+  viewPost(currentDetailPostId);
 }
 
 // ---- 通知 ----
@@ -552,6 +595,8 @@ async function markNotifRead(notifId) {
 
 function closeDetail() {
   document.getElementById('detail-view').style.display = 'none';
+  replyToUser = null;
+  currentDetailPostId = null;
 }
 
 // ---- Publish ----
