@@ -644,11 +644,19 @@ async function addComment(postId) {
 
 function replyToComment(userId, username) {
   replyToUser = { userId, username };
-  viewPost(currentDetailPostId);
-  setTimeout(() => {
-    const input = document.getElementById('comment-input');
-    if (input) input.focus();
-  }, 100);
+  // 直接更新回复提示和输入框，不重新渲染整个详情页
+  const replyBar = document.getElementById('reply-bar');
+  const input = document.getElementById('comment-input');
+  if (replyBar) {
+    const span = replyBar.querySelector('span');
+    if (span) span.textContent = '回复 @' + username;
+    replyBar.style.display = 'flex';
+  }
+  if (input) {
+    input.placeholder = '回复 @' + username + '...';
+    // 同步聚焦（必须在点击事件内直接调用，不能用 setTimeout，否则 iOS 不弹键盘）
+    input.focus();
+  }
 }
 
 function cancelReply() {
