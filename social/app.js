@@ -797,7 +797,10 @@ function closeProfileModal() {
   document.getElementById('profile-modal').style.display = 'none';
 }
 
-// 头像上传
+// 头像上传（带裁剪）
+let cropperImg = null;
+let cropperState = { x: 0, y: 0, scale: 1, imgW: 0, imgH: 0 };
+
 document.addEventListener('DOMContentLoaded', () => {
   const avatarInput = document.getElementById('avatar-input');
   if (avatarInput) {
@@ -806,13 +809,106 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = evt => {
-        pendingAvatar = evt.target.result.split(',')[1]; // base64 without prefix
-        document.getElementById('profile-avatar-edit').src = evt.target.result;
+        const img = new Image();
+        img.onload = () => openCropper(img);
+        img.src = evt.target.result;
       };
       reader.readAsDataURL(file);
     });
   }
+
+  // 裁剪交互
+  const container = document.getElementById('cropper-container');
+  if (container) {
+    let startX, startY, startImgX, startImgY;
+    let startDist = 0, startScale = 1;
+
+    function onStart(e) {
+      const t = e.touches ? e.touches[0] : e;
+      if (e.touches && e.touches.length === 2) {
+        startDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        startScale = cropperState.scale;
+      } else {
+        startX = t.clientX;
+        startY = t.clientY;
+        startImgX = cropperState.x;
+        startImgY = cropperState.y;
+      }
+    }
+    function onMove(e) {
+      if (e.touches && e.touches.length === 2) {
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        cropperState.scale = Math.max(0.3, Math.min(5, startScale * (dist / startDist)));
+        drawCropper();
+      } else {
+        const t = e.touches ? e.touches[0] : e;
+        cropperState.x = startImgX + (t.clientX - startX);
+        cropperState.y = startImgY + (t.clientY - startY);
+        drawCropper();
+      }
+      e.preventDefault();
+    }
+    container.addEventListener('mousedown', onStart);
+    container.addEventListener('touchstart', onStart, { passive: false });
+    container.addEventListener('mousemove', e => { if (e.buttons) onMove(e); });
+    container.addEventListener('touchmove', onMove, { passive: false });
+  }
 });
+
+function openCropper(img) {
+  cropperImg = img;
+  const canvas = document.getElementById('cropper-canvas');
+  const container = document.getElementById('cropper-container');
+  const size = 280;
+  canvas.width = size;
+  canvas.height = size;
+  // 初始缩放：让图片短边填满裁剪框
+  const minSide = Math.min(img.width, img.height);
+  cropperState.scale = size / minSide;
+  cropperState.imgW = img.width;
+  cropperState.imgH = img.height;
+  // 居中
+  cropperState.x = (size - img.width * cropperState.scale) / 2;
+  cropperState.y = (size - img.height * cropperState.scale) / 2;
+  drawCropper();
+  document.getElementById('cropper-modal').style.display = 'flex';
+}
+
+function drawCropper() {
+  const canvas = document.getElementById('cropper-canvas');
+  const ctx = canvas.getContext('2d');
+  const size = 280;
+  ctx.clearRect(0, 0, size, size);
+  if (cropperImg) {
+    const s = cropperState.scale;
+    ctx.drawImage(cropperImg, cropperState.x, cropperState.y, cropperImg.width * s, cropperImg.height * s);
+  }
+}
+
+function confirmCrop() {
+  const canvas = document.getElementById('cropper-canvas');
+  // 裁剪圆形区域，输出 256x256
+  const out = document.createElement('canvas');
+  out.width = 256;
+  out.height = 256;
+  const octx = out.getContext('2d');
+  octx.beginPath();
+  octx.arc(128, 128, 128, 0, Math.PI * 2);
+  octx.closePath();
+  octx.clip();
+  const s = cropperState.scale;
+  const ratio = 256 / 280;
+  octx.drawImage(cropperImg, cropperState.x * ratio, cropperState.y * ratio, cropperImg.width * s * ratio, cropperImg.height * s * ratio);
+  const dataUrl = out.toDataURL('image/jpeg', 0.9);
+  pendingAvatar = dataUrl.split(',')[1];
+  document.getElementById('profile-avatar-edit').src = dataUrl;
+  closeCropper();
+}
+
+function closeCropper() {
+  document.getElementById('cropper-modal').style.display = 'none';
+  cropperImg = null;
+}
 
 async function saveProfile() {
   const newUsername = document.getElementById('edit-username').value.trim();

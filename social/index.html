@@ -208,7 +208,7 @@
     <div style="text-align:center;margin:16px 0;">
       <img id="profile-avatar-edit" src="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;background:#eee;cursor:pointer;" onclick="document.getElementById('avatar-input').click()">
       <input type="file" id="avatar-input" accept="image/*" style="display:none;">
-      <p style="color:#888;font-size:12px;margin-top:8px;">点击头像更换</p>
+      <p style="color:#888;font-size:12px;margin-top:8px;">点击头像更换（可裁剪）</p>
     </div>
     <label style="font-size:13px;color:#666;">昵称</label>
     <input type="text" id="edit-username" style="margin:6px 0 12px;">
@@ -223,9 +223,25 @@
   </div>
 </div>
 
+<!-- 头像裁剪弹窗 -->
+<div id="cropper-modal" class="detail-view" style="display:none;z-index:10000;">
+  <div class="detail-card" style="max-width:360px;padding:16px;">
+    <h3 style="text-align:center;">✂️ 裁剪头像</h3>
+    <p style="color:#888;font-size:12px;text-align:center;margin:8px 0;">拖动图片调整位置，双指缩放</p>
+    <div id="cropper-container" style="position:relative;width:280px;height:280px;margin:12px auto;overflow:hidden;border-radius:50%;background:#000;touch-action:none;">
+      <canvas id="cropper-canvas" style="position:absolute;top:0;left:0;"></canvas>
+      <div style="position:absolute;inset:0;border:3px solid #fff;border-radius:50%;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="btn-danger" onclick="confirmCrop()" style="margin:0;flex:1;">确认裁剪</button>
+      <button class="btn-secondary" onclick="closeCropper()" style="margin:0;flex:1;">取消</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 10;
+const CURRENT_V = 11;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -246,6 +262,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>
