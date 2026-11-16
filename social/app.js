@@ -824,11 +824,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let startDist = 0, startScale = 1;
 
     function onStart(e) {
-      const t = e.touches ? e.touches[0] : e;
       if (e.touches && e.touches.length === 2) {
         startDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         startScale = cropperState.scale;
       } else {
+        const t = e.touches ? e.touches[0] : e;
         startX = t.clientX;
         startY = t.clientY;
         startImgX = cropperState.x;
@@ -838,7 +838,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function onMove(e) {
       if (e.touches && e.touches.length === 2) {
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        cropperState.scale = Math.max(0.3, Math.min(5, startScale * (dist / startDist)));
+        // 更平滑的缩放，限制单次变化幅度
+        let newScale = startScale * (dist / startDist);
+        newScale = Math.max(0.3, Math.min(5, newScale));
+        cropperState.scale = newScale;
+        updateSlider();
         drawCropper();
       } else {
         const t = e.touches ? e.touches[0] : e;
@@ -855,10 +859,25 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+function zoomBy(delta) {
+  cropperState.scale = Math.max(0.3, Math.min(5, cropperState.scale + delta));
+  updateSlider();
+  drawCropper();
+}
+
+function zoomSlider(val) {
+  cropperState.scale = parseFloat(val);
+  drawCropper();
+}
+
+function updateSlider() {
+  const slider = document.getElementById('zoom-slider');
+  if (slider) slider.value = cropperState.scale;
+}
+
 function openCropper(img) {
   cropperImg = img;
   const canvas = document.getElementById('cropper-canvas');
-  const container = document.getElementById('cropper-container');
   const size = 280;
   canvas.width = size;
   canvas.height = size;
@@ -870,6 +889,7 @@ function openCropper(img) {
   // 居中
   cropperState.x = (size - img.width * cropperState.scale) / 2;
   cropperState.y = (size - img.height * cropperState.scale) / 2;
+  updateSlider();
   drawCropper();
   document.getElementById('cropper-modal').style.display = 'flex';
 }

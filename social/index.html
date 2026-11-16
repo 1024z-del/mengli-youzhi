@@ -227,10 +227,15 @@
 <div id="cropper-modal" class="detail-view" style="display:none;z-index:10000;">
   <div class="detail-card" style="max-width:360px;padding:16px;">
     <h3 style="text-align:center;">✂️ 裁剪头像</h3>
-    <p style="color:#888;font-size:12px;text-align:center;margin:8px 0;">拖动图片调整位置，双指缩放</p>
+    <p style="color:#888;font-size:12px;text-align:center;margin:8px 0;">拖动图片移动，用按钮或双指缩放</p>
     <div id="cropper-container" style="position:relative;width:280px;height:280px;margin:12px auto;overflow:hidden;border-radius:50%;background:#000;touch-action:none;">
       <canvas id="cropper-canvas" style="position:absolute;top:0;left:0;"></canvas>
       <div style="position:absolute;inset:0;border:3px solid #fff;border-radius:50%;pointer-events:none;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);"></div>
+    </div>
+    <div style="display:flex;justify-content:center;align-items:center;gap:12px;margin:8px 0;">
+      <button onclick="zoomBy(-0.1)" style="width:44px;height:44px;border-radius:50%;border:none;background:#6c5ce7;color:#fff;font-size:22px;cursor:pointer;">−</button>
+      <input type="range" id="zoom-slider" min="0.3" max="5" step="0.05" value="1" style="flex:1;max-width:160px;" oninput="zoomSlider(this.value)">
+      <button onclick="zoomBy(0.1)" style="width:44px;height:44px;border-radius:50%;border:none;background:#6c5ce7;color:#fff;font-size:22px;cursor:pointer;">+</button>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px;">
       <button class="btn-danger" onclick="confirmCrop()" style="margin:0;flex:1;">确认裁剪</button>
@@ -241,7 +246,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 11;
+const CURRENT_V = 12;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -262,6 +267,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>
