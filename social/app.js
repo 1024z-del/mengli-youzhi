@@ -637,7 +637,6 @@ async function addComment(postId) {
 }
 
 function replyToComment(userId, username) {
-  if (userId === currentUser.id) return; // 不能回复自己
   replyToUser = { userId, username };
   viewPost(currentDetailPostId);
   setTimeout(() => {
