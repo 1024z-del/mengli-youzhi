@@ -392,7 +392,10 @@ async function viewPost(id) {
         <div class="comment-item">
           ${getAvatarHtml(c.username, c.avatar)}
           <div style="flex:1;min-width:0;">
-            <div style="font-size:13px;font-weight:600;color:#333;">${escapeHtml(c.username)}</div>
+            <div style="font-size:13px;font-weight:600;color:#333;">
+              ${escapeHtml(c.username)}
+              ${c.userId === post.authorId ? '<span style="font-size:10px;background:#6c5ce7;color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:normal;">作者</span>' : ''}
+            </div>
             <div style="font-size:14px;color:#444;margin:2px 0;word-break:break-word;">${escapeHtml(c.text)}</div>
             <div style="font-size:11px;color:#999;">${formatTime(c.createdAt)}</div>
           </div>
