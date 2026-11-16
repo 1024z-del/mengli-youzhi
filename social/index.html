@@ -143,6 +143,22 @@
   <div class="detail-card" id="detail-content"></div>
 </div>
 
-<script src="app.js?v=6"></script>
+<script>
+// 自动检测更新：如果 app.js 版本变了，自动刷新
+const CURRENT_V = 7;
+function checkUpdate() {
+  fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
+    .then(r => r.text())
+    .then(html => {
+      const m = html.match(/app\.js\?v=(\d+)/);
+      if (m && parseInt(m[1]) !== CURRENT_V) {
+        location.reload();
+      }
+    })
+    .catch(() => {});
+}
+setInterval(checkUpdate, 30000); // 每30秒检查一次
+</script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
