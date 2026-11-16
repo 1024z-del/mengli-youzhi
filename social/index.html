@@ -126,6 +126,12 @@
         <div id="invite-list" style="margin-top:12px;"></div>
       </div>
       <div class="publish-card" style="margin-top:12px;">
+        <h3>💾 数据管理</h3>
+        <p style="color:#888;font-size:13px;">导出日记备份到本地，或从备份文件恢复。</p>
+        <button class="action-btn" onclick="openExportModal()">📤 导出日记</button>
+        <button class="action-btn" onclick="openImportModal()">📥 导入日记</button>
+      </div>
+      <div class="publish-card" style="margin-top:12px;">
         <h3>👤 我的账号</h3>
         <p id="my-username" style="color:#6c5ce7;font-weight:600;"></p>
         <button class="danger-btn" onclick="logout()">退出登录</button>
@@ -157,9 +163,36 @@
   <div class="detail-card" id="detail-content"></div>
 </div>
 
+<!-- 导出弹窗 -->
+<div id="export-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:420px;">
+    <h3>📤 导出日记</h3>
+    <div id="export-post-list" style="max-height:300px;overflow-y:auto;margin:12px 0;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-secondary" onclick="toggleExportAll()" style="margin:0;flex:1;">全选/反选</button>
+      <button class="btn-danger" onclick="doExport()" style="margin:0;flex:1;">导出选中</button>
+    </div>
+    <button class="btn-secondary" onclick="closeExportModal()" style="margin-top:8px;">取消</button>
+  </div>
+</div>
+
+<!-- 导入弹窗 -->
+<div id="import-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:420px;">
+    <h3>📥 导入日记</h3>
+    <p style="color:#888;font-size:13px;">选择之前导出的 JSON 备份文件，将日记恢复到当前账号。</p>
+    <input type="file" id="import-file" accept=".json" style="margin:12px 0;">
+    <div id="import-preview" style="max-height:200px;overflow-y:auto;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-danger" onclick="doImport()" style="margin:0;flex:1;">确认导入</button>
+      <button class="btn-secondary" onclick="closeImportModal()" style="margin:0;flex:1;">取消</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 8;
+const CURRENT_V = 9;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -180,6 +213,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=9"></script>
 </body>
 </html>

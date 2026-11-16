@@ -602,6 +602,149 @@ async function generateInvite() {
   }
 }
 
+// ---- Export / Import ----
+let exportSelectedIds = new Set();
+let importData = null;
+
+async function openExportModal() {
+  const { content: posts } = await ghGetFile('data/posts.json');
+  const myPosts = (posts || []).filter(p => p.authorId === currentUser.id);
+  exportSelectedIds.clear();
+  document.getElementById('export-post-list').innerHTML = myPosts.length ? myPosts.map(p => `
+    <div class="post-card-manage">
+      <input type="checkbox" onchange="toggleExportPost('${p.id}', this.checked)">
+      <div class="mini-preview">
+        <div class="mp-text">${escapeHtml(p.text || '(无文字)')}</div>
+        <div class="mp-time">${formatTime(p.createdAt)}</div>
+      </div>
+    </div>
+  `).join('') : '<p style="color:#999;text-align:center;padding:20px;">你还没有日记</p>';
+  document.getElementById('export-modal').style.display = 'flex';
+}
+
+function toggleExportPost(id, checked) {
+  if (checked) exportSelectedIds.add(id);
+  else exportSelectedIds.delete(id);
+}
+
+function toggleExportAll() {
+  const boxes = document.querySelectorAll('#export-post-list input[type="checkbox"]');
+  const allChecked = Array.from(boxes).every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; });
+}
+
+function doExport() {
+  const selectedPosts = [];
+  const boxes = document.querySelectorAll('#export-post-list input[type="checkbox"]');
+  const previews = document.querySelectorAll('#export-post-list .mini-preview');
+  boxes.forEach((b, i) => {
+    if (b.checked) {
+      // 从预览文本反推不现实，改用直接重新读取并匹配时间
+      selectedPosts.push(i);
+    }
+  });
+  if (selectedPosts.length === 0) {
+    alert('请先选择要导出的日记');
+    return;
+  }
+  // 重新读取并按索引筛选
+  ghGetFile('data/posts.json').then(({ content: posts }) => {
+    const myPosts = (posts || []).filter(p => p.authorId === currentUser.id);
+    const toExport = selectedPosts.map(i => myPosts[i]);
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      exportedBy: currentUser.username,
+      posts: toExport
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `梦里有zhi_日记备份_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    closeExportModal();
+    showToast('✅ 已导出 ' + toExport.length + ' 篇日记');
+  });
+}
+
+function closeExportModal() {
+  document.getElementById('export-modal').style.display = 'none';
+}
+
+function openImportModal() {
+  importData = null;
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-preview').innerHTML = '';
+  document.getElementById('import-modal').style.display = 'flex';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const fileInput = document.getElementById('import-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        try {
+          const data = JSON.parse(evt.target.result);
+          if (!data.posts || !Array.isArray(data.posts)) {
+            alert('文件格式不正确');
+            return;
+          }
+          importData = data;
+          document.getElementById('import-preview').innerHTML = `
+            <p style="color:#6c5ce7;">✅ 识别到 ${data.posts.length} 篇日记</p>
+            ${data.posts.slice(0, 5).map(p => `
+              <div class="post-card-manage" style="border:none;padding:6px 0;">
+                <div class="mini-preview">
+                  <div class="mp-text">${escapeHtml(p.text || '(无文字)')}</div>
+                  <div class="mp-time">${formatTime(p.createdAt)}</div>
+                </div>
+              </div>
+            `).join('')}
+            ${data.posts.length > 5 ? `<p style="color:#999;font-size:12px;text-align:center;">...还有 ${data.posts.length - 5} 篇</p>` : ''}
+          `;
+        } catch (err) {
+          alert('文件解析失败：' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+});
+
+async function doImport() {
+  if (!importData) {
+    alert('请先选择备份文件');
+    return;
+  }
+  if (!confirm(`确定导入 ${importData.posts.length} 篇日记吗？`)) return;
+
+  const { content: posts, sha } = await ghGetFile('data/posts.json');
+  // 重新生成 id，避免冲突；作者改为当前用户
+  const newPosts = importData.posts.map(p => ({
+    ...p,
+    id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+    authorId: currentUser.id,
+    authorName: currentUser.username,
+    createdAt: p.createdAt || new Date().toISOString()
+  }));
+  const merged = [...(posts || []), ...newPosts];
+  await ghPutFile('data/posts.json', merged, sha);
+
+  importData = null;
+  closeImportModal();
+  showToast('✅ 成功导入 ' + newPosts.length + ' 篇日记');
+  switchTab('feed');
+}
+
+function closeImportModal() {
+  document.getElementById('import-modal').style.display = 'none';
+}
+
 // ---- UI helpers ----
 function showAuth() {
   document.getElementById('auth-page').style.display = 'flex';
