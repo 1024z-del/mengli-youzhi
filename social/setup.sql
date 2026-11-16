@@ -215,12 +215,8 @@ alter table public.invite_codes alter column created_by drop not null;
 insert into public.invite_codes (code) values ('MLYZ01')
 on conflict (code) do nothing;
 
--- ========== 第六部分：关闭邮箱验证 ==========
+-- ========== 第六部分：完成 ==========
 
-UPDATE auth.config SET raw_config = jsonb_set(
-  COALESCE(raw_config, '{}'::jsonb),
-  '{mailer,autoconfirm}',
-  'true'::jsonb
-);
+-- （邮箱验证通过注册后点邮件链接完成，更安全）
 
 select '梦里有zhi 数据库初始化完成 ✅' as result;
