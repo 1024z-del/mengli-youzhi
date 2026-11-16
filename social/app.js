@@ -565,7 +565,13 @@ async function loadNotifications() {
     container.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">暂无消息</p>';
     return;
   }
-  container.innerHTML = list.map(n => {
+  const maxShow = 6;
+  const showAll = list.length <= maxShow || notifExpanded;
+  const visible = showAll ? list : list.slice(0, maxShow);
+  const toggleBtn = list.length > maxShow
+    ? `<div onclick="toggleNotifExpand()" style="text-align:center;padding:10px;font-size:13px;color:#6c5ce7;cursor:pointer;">${showAll ? '收起 ▲' : `展开全部 ${list.length} 条 ▼`}</div>`
+    : '';
+  container.innerHTML = visible.map(n => {
     const icon = n.type === 'like' ? '❤️' : '💬';
     const action = n.type === 'like' ? '赞了你的日记' : `评论：${n.commentText}`;
     return `<div class="notif-item ${n.read ? '' : 'unread'}" onclick="markNotifRead('${n.id}')">
@@ -576,7 +582,13 @@ async function loadNotifications() {
       </div>
       ${n.read ? '' : '<span class="red-dot"></span>'}
     </div>`;
-  }).join('');
+  }).join('') + toggleBtn;
+}
+
+let notifExpanded = false;
+function toggleNotifExpand() {
+  notifExpanded = !notifExpanded;
+  loadNotifications();
 }
 
 async function markNotifRead(notifId) {
