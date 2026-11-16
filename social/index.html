@@ -132,6 +132,17 @@
         <button class="action-btn" onclick="openImportModal()">📥 导入日记</button>
       </div>
       <div class="publish-card" style="margin-top:12px;">
+        <h3>👤 个人信息</h3>
+        <div id="profile-preview" style="display:flex;align-items:center;gap:12px;margin:12px 0;">
+          <img id="profile-avatar-preview" src="" style="width:50px;height:50px;border-radius:50%;object-fit:cover;background:#eee;">
+          <div>
+            <div id="profile-name-preview" style="font-weight:600;color:#333;"></div>
+            <div id="profile-email-preview" style="font-size:12px;color:#888;"></div>
+          </div>
+        </div>
+        <button class="action-btn" onclick="openProfileModal()">✏️ 修改个人信息</button>
+      </div>
+      <div class="publish-card" style="margin-top:12px;">
         <h3>👤 我的账号</h3>
         <p id="my-username" style="color:#6c5ce7;font-weight:600;"></p>
         <button class="danger-btn" onclick="logout()">退出登录</button>
@@ -190,9 +201,31 @@
   </div>
 </div>
 
+<!-- 个人信息编辑弹窗 -->
+<div id="profile-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:420px;">
+    <h3>✏️ 修改个人信息</h3>
+    <div style="text-align:center;margin:16px 0;">
+      <img id="profile-avatar-edit" src="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;background:#eee;cursor:pointer;" onclick="document.getElementById('avatar-input').click()">
+      <input type="file" id="avatar-input" accept="image/*" style="display:none;">
+      <p style="color:#888;font-size:12px;margin-top:8px;">点击头像更换</p>
+    </div>
+    <label style="font-size:13px;color:#666;">昵称</label>
+    <input type="text" id="edit-username" style="margin:6px 0 12px;">
+    <label style="font-size:13px;color:#666;">邮箱</label>
+    <input type="email" id="edit-email" style="margin:6px 0 12px;">
+    <label style="font-size:13px;color:#666;">新密码（不填则不改）</label>
+    <input type="password" id="edit-password" placeholder="至少6位" style="margin:6px 0 12px;">
+    <div style="display:flex;gap:8px;">
+      <button class="btn-danger" onclick="saveProfile()" style="margin:0;flex:1;">保存</button>
+      <button class="btn-secondary" onclick="closeProfileModal()" style="margin:0;flex:1;">取消</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 9;
+const CURRENT_V = 10;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -213,6 +246,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=9"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

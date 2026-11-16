@@ -127,6 +127,7 @@ async function doRegister() {
       username,
       email,
       password: await hashPwd(password),
+      avatar: null,
       createdAt: new Date().toISOString()
     };
     users.push(newUser);
@@ -138,7 +139,7 @@ async function doRegister() {
     await ghPutFile('data/invites.json', invites, inviteSha);
 
     // 5. Auto-login
-    setUser({ id: newUser.id, username: newUser.username });
+    setUser({ id: newUser.id, username: newUser.username, avatar: null, email: newUser.email });
     showApp();
     showToast('✅ 注册成功！');
   } catch (e) {
@@ -169,7 +170,7 @@ async function doLogin() {
       alert('密码错误');
       return;
     }
-    setUser({ id: user.id, username: user.username });
+    setUser({ id: user.id, username: user.username, avatar: user.avatar || null, email: user.email });
     showApp();
     showToast('✅ 登录成功！');
   } catch (e) {
@@ -299,8 +300,11 @@ function renderFeed(posts) {
   container.innerHTML = posts.map(p => `
     <div class="post-card" onclick="viewPost('${p.id}')">
       <div class="post-header">
-        <span class="post-author">${escapeHtml(p.authorName)}</span>
-        <span class="post-vis">${visLabel(p.visibility)}</span>
+        ${getAvatarHtml(p.authorName, p.authorAvatar)}
+        <div style="flex:1;">
+          <span class="post-author">${escapeHtml(p.authorName)}</span>
+          <span class="post-vis">${visLabel(p.visibility)}</span>
+        </div>
       </div>
       ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
       ${p.video ? `<video src="${p.video}" controls class="post-video"></video>` : ''}
@@ -308,6 +312,17 @@ function renderFeed(posts) {
       <div class="post-time">${formatTime(p.createdAt)}</div>
     </div>
   `).join('');
+}
+
+function getAvatarHtml(name, avatarUrl) {
+  if (avatarUrl) {
+    return `<img src="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;">`;
+  }
+  // 默认头像：昵称首字 + 渐变背景
+  const initial = (name || '?').charAt(0).toUpperCase();
+  const colors = ['#667eea','#764ba2','#f093fb','#4facfe','#43e97b','#fa709a','#fee140','#30cfd0'];
+  const color = colors[name ? name.charCodeAt(0) % colors.length : 0];
+  return `<div style="width:36px;height:36px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;margin-right:10px;flex-shrink:0;">${escapeHtml(initial)}</div>`;
 }
 
 function visLabel(v) {
@@ -445,6 +460,7 @@ async function publishPost() {
       id: 'p_' + Date.now(),
       authorId: currentUser.id,
       authorName: currentUser.username,
+      authorAvatar: currentUser.avatar || null,
       text,
       image: imageUrl,
       video: videoUrl,
@@ -581,7 +597,25 @@ async function loadSettings() {
 
   if (currentUser) {
     document.getElementById('my-username').textContent = currentUser.username;
+    // 个人信息预览
+    const avatarEl = document.getElementById('profile-avatar-preview');
+    if (avatarEl) {
+      avatarEl.src = currentUser.avatar || getAvatarUrl(currentUser.username);
+    }
+    const nameEl = document.getElementById('profile-name-preview');
+    if (nameEl) nameEl.textContent = currentUser.username;
+    const emailEl = document.getElementById('profile-email-preview');
+    if (emailEl) emailEl.textContent = currentUser.email || '';
   }
+}
+
+// 生成默认头像 URL（首字母）
+function getAvatarUrl(name) {
+  const initial = (name || '?').charAt(0).toUpperCase();
+  const colors = ['667eea','764ba2','f093fb','4facfe','43e97b','fa709a','fee140','30cfd0'];
+  const color = colors[name ? name.charCodeAt(0) % colors.length : 0];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" rx="50" fill="#${color}"/><text x="50" y="50" font-size="40" fill="white" text-anchor="middle" dominant-baseline="central" font-family="sans-serif">${initial}</text></svg>`;
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 }
 
 function copyInvite(code) {
@@ -730,6 +764,7 @@ async function doImport() {
     id: 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
     authorId: currentUser.id,
     authorName: currentUser.username,
+    authorAvatar: currentUser.avatar || null,
     createdAt: p.createdAt || new Date().toISOString()
   }));
   const merged = [...(posts || []), ...newPosts];
@@ -743,6 +778,110 @@ async function doImport() {
 
 function closeImportModal() {
   document.getElementById('import-modal').style.display = 'none';
+}
+
+// ---- Profile editing ----
+let pendingAvatar = null;
+
+function openProfileModal() {
+  document.getElementById('edit-username').value = currentUser.username || '';
+  document.getElementById('edit-email').value = currentUser.email || '';
+  document.getElementById('edit-password').value = '';
+  pendingAvatar = null;
+  const avatarEdit = document.getElementById('profile-avatar-edit');
+  avatarEdit.src = currentUser.avatar || getAvatarUrl(currentUser.username);
+  document.getElementById('profile-modal').style.display = 'flex';
+}
+
+function closeProfileModal() {
+  document.getElementById('profile-modal').style.display = 'none';
+}
+
+// 头像上传
+document.addEventListener('DOMContentLoaded', () => {
+  const avatarInput = document.getElementById('avatar-input');
+  if (avatarInput) {
+    avatarInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        pendingAvatar = evt.target.result.split(',')[1]; // base64 without prefix
+        document.getElementById('profile-avatar-edit').src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+});
+
+async function saveProfile() {
+  const newUsername = document.getElementById('edit-username').value.trim();
+  const newEmail = document.getElementById('edit-email').value.trim();
+  const newPassword = document.getElementById('edit-password').value;
+
+  if (!newUsername || !newEmail) {
+    alert('昵称和邮箱不能为空');
+    return;
+  }
+  if (newPassword && newPassword.length < 6) {
+    alert('密码至少 6 位');
+    return;
+  }
+
+  try {
+    // 上传头像
+    let avatarUrl = currentUser.avatar;
+    if (pendingAvatar) {
+      avatarUrl = await ghUploadMedia('avatar.jpg', pendingAvatar);
+    }
+
+    // 更新用户信息
+    const { content: users, sha } = await ghGetFile('data/users.json');
+    const user = users.find(u => u.id === currentUser.id);
+    if (!user) { alert('用户不存在'); return; }
+
+    // 检查昵称是否被占用
+    if (newUsername !== user.username && users.find(u => u.username === newUsername)) {
+      alert('昵称已被使用');
+      return;
+    }
+
+    const oldName = user.username;
+    user.username = newUsername;
+    user.email = newEmail;
+    user.avatar = avatarUrl;
+    if (newPassword) {
+      user.password = await hashPwd(newPassword);
+    }
+    await ghPutFile('data/users.json', users, sha);
+
+    // 如果昵称或头像变了，更新所有该用户的日记
+    if (newUsername !== oldName || avatarUrl !== currentUser.avatar) {
+      const { content: posts, sha: postsSha } = await ghGetFile('data/posts.json');
+      posts.forEach(p => {
+        if (p.authorId === currentUser.id) {
+          p.authorName = newUsername;
+          p.authorAvatar = avatarUrl;
+        }
+      });
+      await ghPutFile('data/posts.json', posts, postsSha);
+    }
+
+    // 更新本地登录态
+    setUser({
+      id: currentUser.id,
+      username: newUsername,
+      email: newEmail,
+      avatar: avatarUrl
+    });
+
+    closeProfileModal();
+    loadSettings();
+    showToast('✅ 个人信息已更新');
+  } catch (e) {
+    alert('保存失败：' + e.message);
+    console.error(e);
+  }
 }
 
 // ---- UI helpers ----
