@@ -398,6 +398,7 @@ async function viewPost(id) {
             <div style="font-size:13px;font-weight:600;color:#333;">
               ${escapeHtml(c.username)}
               ${c.userId === post.authorId ? '<span style="font-size:10px;background:#6c5ce7;color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:normal;">作者</span>' : ''}
+              ${c.userId === currentUser.id ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:normal;">我</span>' : ''}
             </div>
             <div style="font-size:14px;color:#444;margin:2px 0;word-break:break-word;">
               ${c.replyToUsername ? `<span style="color:#6c5ce7;font-size:12px;">回复 @${escapeHtml(c.replyToUsername)}：</span>` : ''}
