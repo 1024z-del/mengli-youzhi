@@ -143,6 +143,7 @@
         <button class="action-btn" onclick="openExportModal()">📤 导出日记</button>
         <button class="action-btn" onclick="openImportModal()">📥 导入日记</button>
         <button class="action-btn" onclick="openTrashModal()">🗑️ 回收站</button>
+        <button class="action-btn" onclick="openLikesModal()">❤️ 我的点赞</button>
       </div>
       <div class="publish-card" style="margin-top:12px;">
         <h3>🎟️ 邀请码</h3>
@@ -216,6 +217,16 @@
   </div>
 </div>
 
+<!-- 点赞清单弹窗 -->
+<div id="likes-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:420px;">
+    <h3>❤️ 我的点赞</h3>
+    <p style="color:#888;font-size:13px;">你点过赞的所有日记</p>
+    <div id="likes-list" style="max-height:350px;overflow-y:auto;margin:12px 0;"></div>
+    <button class="btn-secondary" onclick="closeLikesModal()" style="margin:0;">关闭</button>
+  </div>
+</div>
+
 <!-- 回收站弹窗 -->
 <div id="trash-modal" class="detail-view" style="display:none;">
   <div class="detail-card" style="max-width:420px;">
@@ -273,7 +284,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 25;
+const CURRENT_V = 26;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -294,6 +305,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=25"></script>
+<script src="app.js?v=26"></script>
 </body>
 </html>

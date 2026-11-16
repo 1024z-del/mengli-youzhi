@@ -217,6 +217,8 @@ let manageMode = false;
 let selectedPostIds = new Set();
 let allPostsCache = [];
 let postsShaCache = null;
+let notifsCache = [];
+let notifsShaCache = null;
 
 function enterManageMode() {
   manageMode = true;
@@ -609,9 +611,7 @@ function cancelReply() {
 // ---- 通知 ----
 async function addNotification({ userId, type, fromUserId, fromUsername, postId, postText, commentText }) {
   try {
-    const { content: notifs, sha } = await ghGetFile('data/notifications.json');
-    const list = notifs || [];
-    list.push({
+    const newNotif = {
       id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 4),
       userId,
       type,
@@ -622,18 +622,41 @@ async function addNotification({ userId, type, fromUserId, fromUsername, postId,
       commentText: commentText || '',
       read: false,
       createdAt: new Date().toISOString()
-    });
-    // 只保留最近 200 条
-    const trimmed = list.slice(-200);
-    await ghPutFile('data/notifications.json', trimmed, sha);
+    };
+    // 更新本地缓存
+    notifsCache.push(newNotif);
+    // 后台写入 GitHub
+    (async () => {
+      try {
+        const { content, sha } = await ghGetFile('data/notifications.json');
+        const list = content || [];
+        list.push(newNotif);
+        const trimmed = list.slice(-200);
+        const r = await ghPutFile('data/notifications.json', trimmed, sha);
+        if (r && r.content && r.content.sha) notifsShaCache = r.content.sha;
+        notifsCache = trimmed;
+      } catch (e) { console.error('通知写入失败', e); }
+    })();
   } catch (e) {
-    console.error('通知写入失败', e);
+    console.error('通知失败', e);
   }
 }
 
 async function loadNotifications() {
-  const { content: notifs } = await ghGetFile('data/notifications.json');
-  const list = (notifs || []).filter(n => n.userId === currentUser.id);
+  // 优先用缓存渲染（秒开），后台再刷新
+  renderNotifications();
+  (async () => {
+    try {
+      const { content: notifs, sha } = await ghGetFile('data/notifications.json');
+      notifsCache = notifs || [];
+      notifsShaCache = sha;
+      renderNotifications();
+    } catch (e) { console.error('刷新通知失败', e); }
+  })();
+}
+
+function renderNotifications() {
+  const list = notifsCache.filter(n => n.userId === currentUser.id);
   list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   // 更新底部角标
   const unreadCount = list.filter(n => !n.read).length;
@@ -672,30 +695,45 @@ async function loadNotifications() {
   }).join('') + toggleBtn;
 }
 
-let notifExpanded = false;
-function toggleNotifExpand() {
-  notifExpanded = !notifExpanded;
-  loadNotifications();
-}
-
 async function markNotifRead(notifId) {
-  const { content: notifs, sha } = await ghGetFile('data/notifications.json');
-  const n = (notifs || []).find(x => x.id === notifId);
+  const n = notifsCache.find(x => x.id === notifId);
+  const postId = n ? n.postId : null;
+  // 乐观更新：立即标记已读并刷新界面
   if (n && !n.read) {
     n.read = true;
-    await ghPutFile('data/notifications.json', notifs, sha);
+    renderNotifications();
   }
-  loadNotifications();
-  // 如果通知关联了日记，打开日记
-  if (n && n.postId) {
-    viewPost(n.postId);
-  }
+  // 打开日记（用缓存，秒开）
+  if (postId) viewPost(postId);
+  // 后台同步到 GitHub
+  (async () => {
+    try {
+      if (!notifsShaCache) {
+        const { content, sha } = await ghGetFile('data/notifications.json');
+        notifsCache = content || [];
+        notifsShaCache = sha;
+        const target = notifsCache.find(x => x.id === notifId);
+        if (target) target.read = true;
+      } else {
+        const target = notifsCache.find(x => x.id === notifId);
+        if (target) target.read = true;
+      }
+      const r = await ghPutFile('data/notifications.json', notifsCache, notifsShaCache);
+      if (r && r.content && r.content.sha) notifsShaCache = r.content.sha;
+    } catch (e) { console.error('标记已读同步失败', e); }
+  })();
 }
 
 function closeDetail() {
   document.getElementById('detail-view').style.display = 'none';
   replyToUser = null;
   currentDetailPostId = null;
+}
+
+let notifExpanded = false;
+function toggleNotifExpand() {
+  notifExpanded = !notifExpanded;
+  renderNotifications();
 }
 
 // ---- Publish ----
@@ -1176,6 +1214,40 @@ async function doImport() {
 
 function closeImportModal() {
   document.getElementById('import-modal').style.display = 'none';
+}
+
+// ---- 点赞清单 ----
+function openLikesModal() {
+  document.getElementById('likes-modal').style.display = 'flex';
+  renderLikesList();
+}
+
+function closeLikesModal() {
+  document.getElementById('likes-modal').style.display = 'none';
+}
+
+function renderLikesList() {
+  const likedPosts = allPostsCache.filter(p => (p.likes || []).includes(currentUser.id));
+  const container = document.getElementById('likes-list');
+  if (!likedPosts.length) {
+    container.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:20px 0;">还没有赞过任何日记</p>';
+    return;
+  }
+  likedPosts.sort((a, b) => {
+    const aTime = (a.likes || []).indexOf(currentUser.id);
+    return 0; // 保持原顺序
+  });
+  container.innerHTML = likedPosts.map(p => `
+    <div class="comment-item" onclick="closeLikesModal();viewPost('${p.id}')" style="cursor:pointer;">
+      ${getAvatarHtml(p.authorName, p.authorAvatar)}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:#333;">${escapeHtml(p.authorName)} ${visLabel(p.visibility)}</div>
+        <div style="font-size:13px;color:#555;margin:4px 0;word-break:break-word;">${escapeHtml(p.text || '(无文字)')}</div>
+        ${p.image ? '<div style="font-size:11px;color:#6c5ce7;">[含图片]</div>' : ''}
+        <div style="font-size:11px;color:#999;margin-top:2px;">${formatTime(p.createdAt)} · ❤️ ${(p.likes||[]).length} 赞</div>
+      </div>
+    </div>
+  `).join('');
 }
 
 // ---- 回收站 ----
