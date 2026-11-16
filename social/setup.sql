@@ -204,4 +204,12 @@ insert into public.invite_codes (code) values ('MLYZ01')
 on conflict (code) do nothing;
 
 -- ---------- 完成 ----------
+
+-- 关闭邮箱验证（注册后直接登录，不用点邮件链接）
+UPDATE auth.config SET raw_config = jsonb_set(
+  COALESCE(raw_config, '{}'::jsonb),
+  '{mailer,autoconfirm}',
+  'true'::jsonb
+);
+
 select '梦里有zhi 数据库初始化完成 ✅' as result;
