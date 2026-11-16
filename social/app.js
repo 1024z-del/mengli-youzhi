@@ -80,6 +80,39 @@ let currentUser = JSON.parse(localStorage.getItem('mlyz_user') || 'null');
 let replyToUser = null; // { userId, username } 当前回复目标
 let currentDetailPostId = null; // 当前打开的日记 ID
 
+// ---- 弹窗返回栈（支持手机返回键）----
+const overlayStack = [];
+function openOverlay(id) {
+  overlayStack.push(id);
+  history.pushState({ overlay: id }, '');
+}
+function closeOverlay(id) {
+  const idx = overlayStack.lastIndexOf(id);
+  if (idx >= 0) {
+    // 如果是栈顶，用 history.back() 触发 popstate 关闭
+    if (idx === overlayStack.length - 1) {
+      history.back();
+    } else {
+      overlayStack.splice(idx, 1);
+      document.getElementById(id).style.display = 'none';
+    }
+  } else {
+    document.getElementById(id).style.display = 'none';
+  }
+}
+window.addEventListener('popstate', (e) => {
+  if (overlayStack.length) {
+    const id = overlayStack.pop();
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+    // 关闭详情页时重置状态
+    if (id === 'detail-view') {
+      replyToUser = null;
+      currentDetailPostId = null;
+    }
+  }
+});
+
 function setUser(u) {
   currentUser = u;
   localStorage.setItem('mlyz_user', JSON.stringify(u));
@@ -392,6 +425,7 @@ async function viewPost(id) {
     if (!canViewPost(cached, currentUser.id)) { alert('无权查看'); return; }
     renderPostDetail(id);
     document.getElementById('detail-view').style.display = 'flex';
+    openOverlay('detail-view');
     // 后台静默刷新最新数据
     (async () => {
       try {
@@ -411,6 +445,7 @@ async function viewPost(id) {
   if (!canViewPost(post, currentUser.id)) { alert('无权查看'); return; }
   renderPostDetail(id);
   document.getElementById('detail-view').style.display = 'flex';
+  openOverlay('detail-view');
 }
 
 // ---- 点赞（乐观更新） ----
@@ -725,9 +760,7 @@ async function markNotifRead(notifId) {
 }
 
 function closeDetail() {
-  document.getElementById('detail-view').style.display = 'none';
-  replyToUser = null;
-  currentDetailPostId = null;
+  closeOverlay('detail-view');
 }
 
 let notifExpanded = false;
@@ -1090,6 +1123,7 @@ async function openExportModal() {
     </div>
   `).join('') : '<p style="color:#999;text-align:center;padding:20px;">你还没有日记</p>';
   document.getElementById('export-modal').style.display = 'flex';
+  openOverlay('export-modal');
 }
 
 function toggleExportPost(id, checked) {
@@ -1140,7 +1174,7 @@ function doExport() {
 }
 
 function closeExportModal() {
-  document.getElementById('export-modal').style.display = 'none';
+  closeOverlay('export-modal');
 }
 
 function openImportModal() {
@@ -1148,6 +1182,7 @@ function openImportModal() {
   document.getElementById('import-file').value = '';
   document.getElementById('import-preview').innerHTML = '';
   document.getElementById('import-modal').style.display = 'flex';
+  openOverlay('import-modal');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1213,17 +1248,18 @@ async function doImport() {
 }
 
 function closeImportModal() {
-  document.getElementById('import-modal').style.display = 'none';
+  closeOverlay('import-modal');
 }
 
 // ---- 点赞清单 ----
 function openLikesModal() {
   document.getElementById('likes-modal').style.display = 'flex';
+  openOverlay('likes-modal');
   renderLikesList();
 }
 
 function closeLikesModal() {
-  document.getElementById('likes-modal').style.display = 'none';
+  closeOverlay('likes-modal');
 }
 
 function renderLikesList() {
@@ -1253,11 +1289,12 @@ function renderLikesList() {
 // ---- 回收站 ----
 async function openTrashModal() {
   document.getElementById('trash-modal').style.display = 'flex';
+  openOverlay('trash-modal');
   await loadTrashList();
 }
 
 function closeTrashModal() {
-  document.getElementById('trash-modal').style.display = 'none';
+  closeOverlay('trash-modal');
 }
 
 async function loadTrashList() {
@@ -1345,10 +1382,11 @@ function openProfileModal() {
   const avatarEdit = document.getElementById('profile-avatar-edit');
   avatarEdit.src = currentUser.avatar || getAvatarUrl(currentUser.username);
   document.getElementById('profile-modal').style.display = 'flex';
+  openOverlay('profile-modal');
 }
 
 function closeProfileModal() {
-  document.getElementById('profile-modal').style.display = 'none';
+  closeOverlay('profile-modal');
 }
 
 // 头像上传（带裁剪）
@@ -1453,6 +1491,7 @@ function openCropper(img) {
   updateSlider();
   drawCropper();
   document.getElementById('cropper-modal').style.display = 'flex';
+  openOverlay('cropper-modal');
 }
 
 function drawCropper() {
@@ -1487,8 +1526,8 @@ function confirmCrop() {
 }
 
 function closeCropper() {
-  document.getElementById('cropper-modal').style.display = 'none';
   cropperImg = null;
+  closeOverlay('cropper-modal');
 }
 
 async function saveProfile() {
