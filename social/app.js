@@ -16,8 +16,8 @@ const headers = {
 
 // ---- GitHub API helpers ----
 async function ghGetFile(path) {
-  const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}?ref=${GH.branch}`;
-  const r = await fetch(url, { headers });
+  const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}?ref=${GH.branch}&t=${Date.now()}`;
+  const r = await fetch(url, { headers, cache: 'no-store' });
   if (r.status === 404) return { content: null, sha: null };
   if (!r.ok) throw new Error(`读取失败 ${r.status}`);
   const j = await r.json();
@@ -33,7 +33,24 @@ async function ghPutFile(path, data, sha) {
     branch: GH.branch
   };
   if (sha) body.sha = sha;
-  const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+  let r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+  // 409: SHA mismatch, retry once with fresh SHA
+  if (r.status === 409) {
+    const fresh = await ghGetFile(path);
+    body.sha = fresh.sha;
+    // merge: if data is array, combine with fresh content
+    if (Array.isArray(data) && Array.isArray(fresh.content)) {
+      const existing = fresh.content;
+      const existingIds = new Set(existing.map(x => x.id));
+      for (const item of data) {
+        if (!item.id || !existingIds.has(item.id)) {
+          existing.push(item);
+        }
+      }
+      body.content = btoa(unescape(encodeURIComponent(JSON.stringify(existing))));
+    }
+    r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+  }
   if (!r.ok) throw new Error(`写入失败 ${r.status}`);
   const j = await r.json();
   return j.content.sha;
