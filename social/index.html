@@ -246,7 +246,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 13;
+const CURRENT_V = 14;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -267,6 +267,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

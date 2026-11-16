@@ -113,6 +113,11 @@ async function doRegister() {
       alert('邀请码无效或已被使用');
       return;
     }
+    // 检查是否过期
+    if (!inviteObj.createdAt || (Date.now() - inviteObj.createdAt) > INVITE_TTL) {
+      alert('邀请码已过期，请让朋友重新生成');
+      return;
+    }
 
     // 2. Check username unique
     const { content: users, sha: usersSha } = await ghGetFile('data/users.json');
@@ -584,16 +589,63 @@ async function removeFriend(friendId) {
 }
 
 // ---- Settings / Invite codes ----
+const INVITE_TTL = 10 * 60 * 1000; // 邀请码 10 分钟有效
+
+// 清理过期邀请码
+function cleanExpiredInvites(invites) {
+  const now = Date.now();
+  return invites.filter(i => {
+    if (i.used_by) return true; // 已使用的保留
+    if (!i.createdAt) return false; // 没有 createdAt 的旧邀请码视为过期
+    return (now - i.createdAt) < INVITE_TTL;
+  });
+}
+
+// 邀请码剩余时间（毫秒）
+function inviteRemaining(i) {
+  if (!i.createdAt) return 0;
+  return Math.max(0, INVITE_TTL - (Date.now() - i.createdAt));
+}
+
+function formatCountdown(ms) {
+  const total = Math.floor(ms / 1000);
+  const m = String(Math.floor(total / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+let countdownTimer = null;
+
 async function loadSettings() {
-  const { content: invites } = await ghGetFile('data/invites.json');
-  const myInvites = invites.filter(i => i.used_by === currentUser.id || true);
-  const available = invites.filter(i => !i.used_by);
-  document.getElementById('invite-list').innerHTML = available.map(i =>
-    `<div style="padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-      <code style="font-size:16px;color:#6c5ce7;">${i.code}</code>
-      <button onclick="copyInvite('${i.code}')" class="btn-secondary" style="padding:4px 10px;width:auto;">复制</button>
-    </div>`
-  ).join('') || '<p style="color:#999;">暂无可邀请码</p>';
+  const { content: invites, sha } = await ghGetFile('data/invites.json');
+  // 清理过期的
+  const valid = cleanExpiredInvites(invites);
+  if (valid.length !== invites.length) {
+    await ghPutFile('data/invites.json', valid, sha);
+  }
+
+  const available = valid.filter(i => !i.used_by);
+  document.getElementById('invite-list').innerHTML = available.map(i => {
+    const remain = inviteRemaining(i);
+    return `<div style="padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <code style="font-size:16px;color:#6c5ce7;">${i.code}</code>
+        <button onclick="copyInvite('${i.code}')" class="btn-secondary" style="padding:4px 10px;width:auto;">复制</button>
+      </div>
+      <div class="invite-countdown" data-code="${i.code}" data-created="${i.createdAt}" style="font-size:12px;color:#ff6b6b;margin-top:4px;">⏱️ ${formatCountdown(remain)}</div>
+    </div>`;
+  }).join('') || '<p style="color:#999;">暂无可邀请码（点上方按钮生成，10分钟有效）</p>';
+
+  // 启动倒计时
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    document.querySelectorAll('.invite-countdown').forEach(el => {
+      const created = parseInt(el.getAttribute('data-created'));
+      const remain = Math.max(0, INVITE_TTL - (Date.now() - created));
+      el.textContent = remain > 0 ? `⏱️ ${formatCountdown(remain)}` : '已过期';
+      el.style.color = remain > 0 ? '#ff6b6b' : '#999';
+    });
+  }, 1000);
 
   if (currentUser) {
     document.getElementById('my-username').textContent = currentUser.username;
@@ -627,9 +679,11 @@ async function generateInvite() {
   try {
     const code = 'MLYZ' + Math.random().toString(36).slice(2, 6).toUpperCase();
     const { content: invites, sha } = await ghGetFile('data/invites.json');
-    invites.push({ code, used_by: null, used_at: null });
-    await ghPutFile('data/invites.json', invites, sha);
-    showToast('✅ 生成邀请码：' + code);
+    // 删除所有未使用的旧邀请码（同时只允许一个有效）
+    const filtered = invites.filter(i => i.used_by);
+    filtered.push({ code, used_by: null, used_at: null, createdAt: Date.now() });
+    await ghPutFile('data/invites.json', filtered, sha);
+    showToast('✅ 生成邀请码：' + code + '（10分钟有效）');
     loadSettings();
   } catch (e) {
     alert('生成失败：' + e.message);
