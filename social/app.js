@@ -302,7 +302,11 @@ function renderFeed(posts) {
     container.innerHTML = '<p style="text-align:center;color:#999;padding:40px 0;">还没有日记哦～ 去发布第一篇吧！</p>';
     return;
   }
-  container.innerHTML = posts.map(p => `
+  container.innerHTML = posts.map(p => {
+    const liked = (p.likes || []).includes(currentUser.id);
+    const likeCount = (p.likes || []).length;
+    const commentCount = (p.comments || []).length;
+    return `
     <div class="post-card" onclick="viewPost('${p.id}')">
       <div class="post-header">
         ${getAvatarHtml(p.authorName, p.authorAvatar)}
@@ -315,8 +319,16 @@ function renderFeed(posts) {
       ${p.video ? `<video src="${p.video}" controls class="post-video"></video>` : ''}
       <p class="post-text">${escapeHtml(p.text)}</p>
       <div class="post-time">${formatTime(p.createdAt)}</div>
+      <div class="post-actions">
+        <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="event.stopPropagation();toggleLike('${p.id}')">
+          ${liked ? '❤️' : '🤍'} ${likeCount}
+        </span>
+        <span class="action-btn-comment" onclick="event.stopPropagation();viewPost('${p.id}')">
+          💬 ${commentCount}
+        </span>
+      </div>
     </div>
-  `).join('');
+  `;}).join('');
 }
 
 function getAvatarHtml(name, avatarUrl) {
@@ -354,18 +366,88 @@ async function viewPost(id) {
     alert('无权查看');
     return;
   }
+  const liked = (post.likes || []).includes(currentUser.id);
+  const comments = post.comments || [];
   document.getElementById('detail-content').innerHTML = `
     <div class="detail-header">
-      <span class="post-author">${escapeHtml(post.authorName)}</span>
-      <span class="post-vis">${visLabel(post.visibility)}</span>
+      ${getAvatarHtml(post.authorName, post.authorAvatar)}
+      <div style="flex:1;">
+        <span class="post-author">${escapeHtml(post.authorName)}</span>
+        <span class="post-vis">${visLabel(post.visibility)}</span>
+      </div>
     </div>
     ${post.image ? `<img src="${post.image}" class="detail-img">` : ''}
     ${post.video ? `<video src="${post.video}" controls class="detail-video"></video>` : ''}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     <div class="post-time">${formatTime(post.createdAt)}</div>
+    <div class="post-actions" style="margin:12px 0;">
+      <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="toggleLike('${post.id}')">
+        ${liked ? '❤️' : '🤍'} ${(post.likes || []).length}
+      </span>
+      <span class="action-btn-comment">💬 ${comments.length}</span>
+    </div>
+    <div class="comment-section">
+      <h4 style="font-size:14px;color:#666;margin-bottom:10px;">评论 (${comments.length})</h4>
+      ${comments.length ? comments.map(c => `
+        <div class="comment-item">
+          ${getAvatarHtml(c.username, c.avatar)}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:600;color:#333;">${escapeHtml(c.username)}</div>
+            <div style="font-size:14px;color:#444;margin:2px 0;word-break:break-word;">${escapeHtml(c.text)}</div>
+            <div style="font-size:11px;color:#999;">${formatTime(c.createdAt)}</div>
+          </div>
+        </div>
+      `).join('') : '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">还没有评论，来抢沙发吧～</p>'}
+      <div class="comment-input-row">
+        <input type="text" id="comment-input" placeholder="说点什么..." style="flex:1;padding:10px;border:1px solid #eee;border-radius:20px;outline:none;">
+        <button onclick="addComment('${post.id}')" style="margin-left:8px;padding:10px 16px;background:#6c5ce7;color:#fff;border:none;border-radius:20px;cursor:pointer;">发送</button>
+      </div>
+    </div>
     <button onclick="closeDetail()" class="btn-secondary">返回</button>
   `;
   document.getElementById('detail-view').style.display = 'flex';
+}
+
+// ---- 点赞 ----
+async function toggleLike(postId) {
+  const { content: posts, sha } = await ghGetFile('data/posts.json');
+  const post = posts.find(p => p.id === postId);
+  if (!post) return;
+  post.likes = post.likes || [];
+  const idx = post.likes.indexOf(currentUser.id);
+  if (idx >= 0) {
+    post.likes.splice(idx, 1);
+  } else {
+    post.likes.push(currentUser.id);
+  }
+  await ghPutFile('data/posts.json', posts, sha);
+  // 刷新当前视图
+  if (document.getElementById('detail-view').style.display === 'flex') {
+    viewPost(postId);
+  }
+  loadPosts();
+}
+
+// ---- 评论 ----
+async function addComment(postId) {
+  const input = document.getElementById('comment-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const { content: posts, sha } = await ghGetFile('data/posts.json');
+  const post = posts.find(p => p.id === postId);
+  if (!post) return;
+  post.comments = post.comments || [];
+  post.comments.push({
+    id: 'c_' + Date.now(),
+    userId: currentUser.id,
+    username: currentUser.username,
+    avatar: currentUser.avatar || null,
+    text,
+    createdAt: new Date().toISOString()
+  });
+  await ghPutFile('data/posts.json', posts, sha);
+  viewPost(postId);
+  loadPosts();
 }
 
 function closeDetail() {
@@ -471,6 +553,8 @@ async function publishPost() {
       video: videoUrl,
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
+      likes: [],
+      comments: [],
       createdAt: new Date().toISOString()
     };
 
