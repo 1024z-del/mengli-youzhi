@@ -137,11 +137,6 @@
         <button class="action-btn" onclick="openImportModal()">📥 导入日记</button>
       </div>
       <div class="publish-card" style="margin-top:12px;">
-        <h3>👤 我的账号</h3>
-        <p id="my-username" style="color:#6c5ce7;font-weight:600;"></p>
-        <button class="danger-btn" onclick="logout()">退出登录</button>
-      </div>
-      <div class="publish-card" style="margin-top:12px;">
         <h3>🎟️ 邀请码</h3>
         <p style="color:#888;font-size:13px;">把邀请码发给朋友，他注册时填上就能进来。</p>
         <button class="action-btn" onclick="generateInvite()">生成新邀请码</button>
@@ -152,6 +147,11 @@
         <p style="color:#888;font-size:13px;">把这个网址发给朋友，他就能打开「梦里有zhi」。</p>
         <div style="background:#f5f3ff;padding:10px;border-radius:10px;margin:8px 0;word-break:break-all;font-size:12px;color:#6c5ce7;">https://1024z-del.github.io/mengli-youzhi/social/</div>
         <button class="action-btn" onclick="copyAppUrl()">📋 复制网页地址</button>
+      </div>
+      <div class="publish-card" style="margin-top:12px;">
+        <h3>👤 我的账号</h3>
+        <p id="my-username" style="color:#6c5ce7;font-weight:600;"></p>
+        <button class="danger-btn" onclick="logout()">退出登录</button>
       </div>
     </section>
 
@@ -252,7 +252,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 16;
+const CURRENT_V = 17;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -273,6 +273,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
