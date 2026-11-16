@@ -800,6 +800,7 @@ function closeProfileModal() {
 // 头像上传（带裁剪）
 let cropperImg = null;
 let cropperState = { x: 0, y: 0, scale: 1, imgW: 0, imgH: 0 };
+let sliderBusy = false; // 防止程序设值时触发 oninput 回写
 
 document.addEventListener('DOMContentLoaded', () => {
   const avatarInput = document.getElementById('avatar-input');
@@ -840,7 +841,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         // 更平滑的缩放，限制单次变化幅度
         let newScale = startScale * (dist / startDist);
-        newScale = Math.max(0.3, Math.min(5, newScale));
+        newScale = Math.max(0.05, Math.min(5, newScale));
         cropperState.scale = newScale;
         updateSlider();
         drawCropper();
@@ -860,19 +861,25 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function zoomBy(delta) {
-  cropperState.scale = Math.max(0.3, Math.min(5, cropperState.scale + delta));
+  cropperState.scale = Math.max(0.05, Math.min(5, cropperState.scale + delta));
   updateSlider();
   drawCropper();
 }
 
 function zoomSlider(val) {
+  if (sliderBusy) return;
   cropperState.scale = parseFloat(val);
   drawCropper();
 }
 
 function updateSlider() {
   const slider = document.getElementById('zoom-slider');
-  if (slider) slider.value = cropperState.scale;
+  if (slider) {
+    sliderBusy = true;
+    slider.value = cropperState.scale;
+    // 下一帧解除标志，确保 oninput 不会回写
+    requestAnimationFrame(() => { sliderBusy = false; });
+  }
 }
 
 function openCropper(img) {
