@@ -85,6 +85,9 @@ let pendingOpenPost = null; // 关闭当前弹窗后要打开的日记 ID
 const overlayStack = [];
 function openOverlay(id) {
   overlayStack.push(id);
+  const el = document.getElementById(id);
+  // 栈顶的弹窗 z-index 最高，确保盖在其他弹窗上面
+  if (el) el.style.zIndex = 100 + overlayStack.length;
   history.pushState({ overlay: id }, '');
 }
 function closeOverlay(id) {
