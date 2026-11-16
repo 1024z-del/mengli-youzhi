@@ -62,6 +62,93 @@ function isStorageAvailable() {
   }
 }
 
+// ========== IndexedDB（放大容量，用来存日记和大文件）==========
+
+const DB_NAME = 'mlyz_db';
+const DB_STORE = 'kv';
+let _dbPromise = null;
+
+function openDB() {
+  if (_dbPromise) return _dbPromise;
+  _dbPromise = new Promise((resolve) => {
+    if (!('indexedDB' in window)) return resolve(null);
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+  return _dbPromise;
+}
+
+async function idbGet(key) {
+  const db = await openDB();
+  if (!db) return undefined;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const req = tx.objectStore(DB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(undefined);
+    } catch (e) {
+      resolve(undefined);
+    }
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await openDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+async function idbDelete(key) {
+  const db = await openDB();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).delete(key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    } catch (e) {
+      resolve(false);
+    }
+  });
+}
+
+// 读取全部日记（优先 IndexedDB，并自动迁移旧版 localStorage 数据）
+async function loadDiaries() {
+  let list = await idbGet('diaries');
+  if (Array.isArray(list)) return list;
+
+  const legacy = loadData(STORAGE_KEYS.DIARIES, []);
+  const safeLegacy = Array.isArray(legacy) ? legacy : [];
+  if (safeLegacy.length > 0) {
+    await idbSet('diaries', safeLegacy);
+  }
+  return safeLegacy;
+}
+
+// 保存全部日记（优先 IndexedDB，失败再退回 localStorage）
+async function saveDiaries(list) {
+  const ok = await idbSet('diaries', list);
+  if (ok) return true;
+  return saveData(STORAGE_KEYS.DIARIES, list);
+}
+
 function showToast(message, duration = 1800) {
   const toast = $('#toast');
   toast.textContent = message;
@@ -410,19 +497,21 @@ function initPublish() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // 检查大小（5MB 限制，避免 localStorage 爆炸）
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('❌ 视频太大啦，最多 5MB');
+    // 视频限制 50MB（存在 IndexedDB，容量比 localStorage 大很多）
+    if (file.size > 50 * 1024 * 1024) {
+      showToast('❌ 视频太大啦，最多 50MB（建议 15 秒以内）', 3000);
       e.target.value = '';
       return;
     }
 
     try {
+      showToast('⏳ 正在处理视频...', 1500);
       const base64 = await fileToBase64(file);
       state.currentVideo = base64;
       $('#preview-video').src = base64;
       $('#video-preview').classList.remove('hidden');
-      showToast('🎬 视频已添加');
+      const mb = (base64.length / 1024 / 1024).toFixed(1);
+      showToast(`🎬 视频已添加（${mb}MB）`);
     } catch (err) {
       showToast('❌ 视频读取失败');
     }
@@ -453,7 +542,7 @@ function initPublish() {
   $('#btn-publish').addEventListener('click', publishDiary);
 }
 
-function publishDiary() {
+async function publishDiary() {
   const text = $('#diary-text').value.trim();
   const visibility = $('#visibility-select').value;
   const inviteCodes = visibility === 'invite'
@@ -476,11 +565,11 @@ function publishDiary() {
     createdAt: Date.now()
   };
 
-  const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+  const diaries = await loadDiaries();
   diaries.unshift(diary); // 新日记放最前
 
-  if (!saveData(STORAGE_KEYS.DIARIES, diaries)) {
-    showToast('❌ 保存失败！浏览器不允许存数据，请换普通模式（不要用无痕）', 4000);
+  if (!(await saveDiaries(diaries))) {
+    showToast('❌ 保存失败！手机存储空间不足，请先导出备份并删除一些旧日记', 4000);
     return;
   }
 
@@ -530,13 +619,13 @@ function initDiaryList() {
   });
 }
 
-function renderDiaryList() {
+async function renderDiaryList() {
   const container = $('#diary-list');
   const emptyTip = $('#empty-tip');
   const countEl = $('#diary-count');
   container.innerHTML = '';
 
-  const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+  const diaries = await loadDiaries();
 
   // 根据筛选过滤
   let filtered = diaries;
@@ -636,10 +725,10 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function deleteDiary(id) {
-  const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+async function deleteDiary(id) {
+  const diaries = await loadDiaries();
   const filtered = diaries.filter(d => d.id !== id);
-  saveData(STORAGE_KEYS.DIARIES, filtered);
+  await saveDiaries(filtered);
   showToast('🗑️ 已删除');
   renderDiaryList();
 }
@@ -825,7 +914,7 @@ function initSettings() {
 
   // 立即备份
   $('#btn-backup-now').addEventListener('click', async () => {
-    const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+    const diaries = await loadDiaries();
     if (diaries.length === 0) { showToast('ℹ️ 没有日记可备份'); return; }
     showToast('⏳ 正在备份...', 2000);
     const result = await GistSync.backup(diaries);
@@ -839,8 +928,8 @@ function initSettings() {
       showToast('⏳ 正在拉取...', 2000);
       const result = await GistSync.restore();
       if (result.ok) {
-        if (!saveData(STORAGE_KEYS.DIARIES, result.diaries)) {
-          showToast('❌ 恢复失败：浏览器不允许存数据', 3000);
+        if (!(await saveDiaries(result.diaries))) {
+          showToast('❌ 恢复失败：手机存储空间不足', 3000);
         } else {
           showToast(result.message, 2500);
           renderDiaryList();
@@ -859,15 +948,17 @@ function initSettings() {
   $('#file-import').addEventListener('change', importData);
 
   // 全部删除
-  $('#btn-clear-all').addEventListener('click', () => {
-    const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+  $('#btn-clear-all').addEventListener('click', async () => {
+    const diaries = await loadDiaries();
     if (diaries.length === 0) {
       showToast('ℹ️ 还没有日记');
       return;
     }
-    confirmModal('真的全部删除？', `共有 ${diaries.length} 篇日记，此操作不可恢复！`, () => {
+    confirmModal('真的全部删除？', `共有 ${diaries.length} 篇日记，此操作不可恢复！`, async () => {
+      await idbDelete('diaries');
       localStorage.removeItem(STORAGE_KEYS.DIARIES);
       showToast('🗑️ 已清空全部日记');
+      renderDiaryList();
     });
   });
 }
@@ -917,8 +1008,8 @@ function applyBackground() {
   }
 }
 
-function exportData() {
-  const diaries = loadData(STORAGE_KEYS.DIARIES, []);
+async function exportData() {
+  const diaries = await loadDiaries();
   if (diaries.length === 0) {
     showToast('ℹ️ 没有数据可导出');
     return;
@@ -944,7 +1035,7 @@ function importData(e) {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const data = JSON.parse(reader.result);
       if (!data.diaries || !Array.isArray(data.diaries)) {
@@ -953,11 +1044,15 @@ function importData(e) {
       confirmModal(
         '导入数据',
         `检测到 ${data.diaries.length} 篇日记，会追加到现有数据后面\n（不会覆盖已有日记）`,
-        () => {
-          const existing = loadData(STORAGE_KEYS.DIARIES, []);
+        async () => {
+          const existing = await loadDiaries();
           const merged = [...existing, ...data.diaries];
-          saveData(STORAGE_KEYS.DIARIES, merged);
-          showToast(`✅ 导入成功，现有 ${merged.length} 篇日记`);
+          if (await saveDiaries(merged)) {
+            showToast(`✅ 导入成功，现有 ${merged.length} 篇日记`);
+            renderDiaryList();
+          } else {
+            showToast('❌ 导入失败：手机存储空间不足', 3000);
+          }
         }
       );
     } catch (err) {

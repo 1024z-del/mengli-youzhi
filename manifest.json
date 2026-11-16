@@ -3,7 +3,7 @@
   "short_name": "梦里有zhi",
   "description": "私人社交日记 App",
   "start_url": "./index.html",
-  "display": "standalone",
+  "display": "browser",
   "orientation": "portrait",
   "background_color": "#8B6FC9",
   "theme_color": "#6a5acd",
