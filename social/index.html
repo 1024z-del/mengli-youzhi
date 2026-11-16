@@ -139,9 +139,10 @@
       </div>
       <div class="publish-card" style="margin-top:12px;">
         <h3>💾 数据管理</h3>
-        <p style="color:#888;font-size:13px;">导出日记备份到本地，或从备份文件恢复。</p>
+        <p style="color:#888;font-size:13px;">导出日记备份到本地，或从备份文件恢复。删除的日记会在回收站保留 30 天。</p>
         <button class="action-btn" onclick="openExportModal()">📤 导出日记</button>
         <button class="action-btn" onclick="openImportModal()">📥 导入日记</button>
+        <button class="action-btn" onclick="openTrashModal()">🗑️ 回收站</button>
       </div>
       <div class="publish-card" style="margin-top:12px;">
         <h3>🎟️ 邀请码</h3>
@@ -215,6 +216,18 @@
   </div>
 </div>
 
+<!-- 回收站弹窗 -->
+<div id="trash-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:420px;">
+    <h3>🗑️ 回收站</h3>
+    <p style="color:#888;font-size:13px;">删除的日记会在此保留 30 天，可恢复或永久删除。</p>
+    <div id="trash-list" style="max-height:350px;overflow-y:auto;margin:12px 0;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-secondary" onclick="closeTrashModal()" style="margin:0;flex:1;">关闭</button>
+    </div>
+  </div>
+</div>
+
 <!-- 个人信息编辑弹窗 -->
 <div id="profile-modal" class="detail-view" style="display:none;">
   <div class="detail-card" style="max-width:420px;">
@@ -260,7 +273,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 24;
+const CURRENT_V = 25;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -281,6 +294,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=24"></script>
+<script src="app.js?v=25"></script>
 </body>
 </html>

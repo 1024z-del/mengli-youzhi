@@ -257,14 +257,34 @@ async function deleteSelected() {
     alert('请先选择要删除的日记');
     return;
   }
-  if (!confirm(`确定删除选中的 ${selectedPostIds.size} 篇日记吗？`)) return;
+  if (!confirm(`确定删除选中的 ${selectedPostIds.size} 篇日记吗？\n（删除后会在云端回收站保留 30 天）`)) return;
 
   const { content: posts, sha } = await ghGetFile('data/posts.json');
+  const toDelete = posts.filter(p => selectedPostIds.has(p.id));
   const filtered = posts.filter(p => !selectedPostIds.has(p.id));
+
+  // 移到回收站
+  try {
+    const { content: trash, sha: trashSha } = await ghGetFile('data/trash.json');
+    const trashList = trash || [];
+    const now = new Date().toISOString();
+    toDelete.forEach(p => {
+      trashList.push({ ...p, deletedAt: now });
+    });
+    // 清理超过 30 天的
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const cleaned = trashList.filter(t => new Date(t.deletedAt).getTime() > cutoff);
+    await ghPutFile('data/trash.json', cleaned, trashSha);
+  } catch (e) {
+    console.error('回收站写入失败', e);
+  }
+
   await ghPutFile('data/posts.json', filtered, sha);
+  allPostsCache = filtered;
+  postsShaCache = null;
 
   selectedPostIds.clear();
-  showToast('🗑️ 删除成功');
+  showToast('🗑️ 已移到回收站（保留 30 天）');
   exitManageMode();
 }
 
@@ -1158,6 +1178,90 @@ function closeImportModal() {
   document.getElementById('import-modal').style.display = 'none';
 }
 
+// ---- 回收站 ----
+async function openTrashModal() {
+  document.getElementById('trash-modal').style.display = 'flex';
+  await loadTrashList();
+}
+
+function closeTrashModal() {
+  document.getElementById('trash-modal').style.display = 'none';
+}
+
+async function loadTrashList() {
+  const { content: trash } = await ghGetFile('data/trash.json');
+  const myTrash = (trash || []).filter(t => t.authorId === currentUser.id);
+  const container = document.getElementById('trash-list');
+  if (!myTrash.length) {
+    container.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:20px 0;">回收站是空的</p>';
+    return;
+  }
+  container.innerHTML = myTrash.map(t => {
+    const deletedDays = Math.floor((Date.now() - new Date(t.deletedAt).getTime()) / (24*60*60*1000));
+    const remaining = 30 - deletedDays;
+    return `<div class="comment-item" style="flex-direction:column;align-items:stretch;">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        ${getAvatarHtml(t.authorName, t.authorAvatar)}
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:#333;">${escapeHtml(t.authorName)} ${visLabel(t.visibility)}</div>
+          <div style="font-size:13px;color:#555;margin:4px 0;word-break:break-word;">${escapeHtml(t.text || '(无文字)')}</div>
+          ${t.image ? '<div style="font-size:11px;color:#6c5ce7;">[含图片]</div>' : ''}
+          ${t.video ? '<div style="font-size:11px;color:#6c5ce7;">[含视频]</div>' : ''}
+          <div style="font-size:11px;color:#999;margin-top:4px;">删除于 ${formatTime(t.deletedAt)} · 还剩 ${remaining} 天自动清除</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button onclick="restoreTrashItem('${t.id}')" style="flex:1;padding:8px;background:#10b981;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">♻️ 恢复</button>
+        <button onclick="permanentDeleteTrash('${t.id}')" style="flex:1;padding:8px;background:#ef4444;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">❌ 永久删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function restoreTrashItem(postId) {
+  if (!confirm('确定恢复这篇日记吗？')) return;
+  const { content: trash, sha: trashSha } = await ghGetFile('data/trash.json');
+  const item = (trash || []).find(t => t.id === postId);
+  if (!item) return;
+  // 从回收站移除
+  const newTrash = trash.filter(t => t.id !== postId);
+  await ghPutFile('data/trash.json', newTrash, trashSha);
+  // 加回 posts.json
+  const { content: posts, sha: postsSha } = await ghGetFile('data/posts.json');
+  const { deletedAt, ...restored } = item;
+  posts.push(restored);
+  await ghPutFile('data/posts.json', posts, postsSha);
+  allPostsCache = posts;
+  postsShaCache = null;
+  showToast('♻️ 已恢复');
+  loadTrashList();
+  loadPosts();
+}
+
+async function permanentDeleteTrash(postId) {
+  if (!confirm('确定永久删除吗？删除后无法恢复！')) return;
+  const { content: trash, sha } = await ghGetFile('data/trash.json');
+  const newTrash = trash.filter(t => t.id !== postId);
+  await ghPutFile('data/trash.json', newTrash, sha);
+  showToast('✅ 已永久删除');
+  loadTrashList();
+}
+
+// 自动清理超过 30 天的回收站
+async function cleanupOldTrash() {
+  try {
+    const { content: trash, sha } = await ghGetFile('data/trash.json');
+    if (!trash || !trash.length) return;
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const cleaned = trash.filter(t => new Date(t.deletedAt).getTime() > cutoff);
+    if (cleaned.length !== trash.length) {
+      await ghPutFile('data/trash.json', cleaned, sha);
+    }
+  } catch (e) {
+    console.error('清理回收站失败', e);
+  }
+}
+
 // ---- Profile editing ----
 let pendingAvatar = null;
 
@@ -1397,6 +1501,7 @@ function showApp() {
   switchTab('feed');
   loadPosts();
   loadNotifications();
+  cleanupOldTrash();
 }
 
 function switchTab(tab) {
