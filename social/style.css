@@ -237,6 +237,50 @@ textarea:focus { border-color: #6c5ce7; }
   align-items: center;
 }
 
+.notif-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 10px;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.notif-item.unread {
+  background: #f5f3ff;
+}
+.notif-item:hover {
+  background: #ede9fe;
+}
+.notif-icon {
+  font-size: 20px;
+}
+.red-dot {
+  width: 10px;
+  height: 10px;
+  background: #ff4757;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 22%;
+  background: #ff4757;
+  color: #fff;
+  font-size: 10px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: bold;
+}
+
 /* 详情页 */
 .detail-view {
   position: fixed;

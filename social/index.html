@@ -114,7 +114,14 @@
 
     <!-- 好友页 -->
     <section id="tab-friends" class="tab-content" style="display:none;">
-      <div class="publish-card" id="friends-list"></div>
+      <div class="publish-card">
+        <h3>🔔 消息</h3>
+        <div id="notifications-list" style="margin-top:10px;"></div>
+      </div>
+      <div class="publish-card" style="margin-top:12px;">
+        <h3>👥 好友</h3>
+        <div id="friends-list" style="margin-top:10px;"></div>
+      </div>
     </section>
 
     <!-- 设置页 -->
@@ -167,6 +174,7 @@
     </button>
     <button class="tab-btn" data-tab="friends" onclick="switchTab('friends')">
       <span class="nav-icon">👥</span><span class="nav-label">好友</span>
+      <span id="notif-badge" class="notif-badge" style="display:none;"></span>
     </button>
     <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">
       <span class="nav-icon">⚙️</span><span class="nav-label">设置</span>
@@ -252,7 +260,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 19;
+const CURRENT_V = 20;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -273,6 +281,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

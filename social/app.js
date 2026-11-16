@@ -422,6 +422,17 @@ async function toggleLike(postId) {
     post.likes.splice(idx, 1);
   } else {
     post.likes.push(currentUser.id);
+    // 给作者发通知（不给自己发）
+    if (post.authorId !== currentUser.id) {
+      await addNotification({
+        userId: post.authorId,
+        type: 'like',
+        fromUserId: currentUser.id,
+        fromUsername: currentUser.username,
+        postId: post.id,
+        postText: post.text
+      });
+    }
   }
   await ghPutFile('data/posts.json', posts, sha);
   // 刷新当前视图
@@ -449,8 +460,94 @@ async function addComment(postId) {
     createdAt: new Date().toISOString()
   });
   await ghPutFile('data/posts.json', posts, sha);
+  // 给作者发通知（不给自己发）
+  if (post.authorId !== currentUser.id) {
+    await addNotification({
+      userId: post.authorId,
+      type: 'comment',
+      fromUserId: currentUser.id,
+      fromUsername: currentUser.username,
+      postId: post.id,
+      postText: post.text,
+      commentText: text
+    });
+  }
   viewPost(postId);
   loadPosts();
+}
+
+// ---- 通知 ----
+async function addNotification({ userId, type, fromUserId, fromUsername, postId, postText, commentText }) {
+  try {
+    const { content: notifs, sha } = await ghGetFile('data/notifications.json');
+    const list = notifs || [];
+    list.push({
+      id: 'n_' + Date.now() + '_' + Math.random().toString(36).slice(2, 4),
+      userId,
+      type,
+      fromUserId,
+      fromUsername,
+      postId,
+      postText: (postText || '').slice(0, 30),
+      commentText: commentText || '',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+    // 只保留最近 200 条
+    const trimmed = list.slice(-200);
+    await ghPutFile('data/notifications.json', trimmed, sha);
+  } catch (e) {
+    console.error('通知写入失败', e);
+  }
+}
+
+async function loadNotifications() {
+  const { content: notifs } = await ghGetFile('data/notifications.json');
+  const list = (notifs || []).filter(n => n.userId === currentUser.id);
+  list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  // 更新底部角标
+  const unreadCount = list.filter(n => !n.read).length;
+  const badge = document.getElementById('notif-badge');
+  if (badge) {
+    if (unreadCount > 0) {
+      badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+  const container = document.getElementById('notifications-list');
+  if (!container) return;
+  if (!list.length) {
+    container.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:10px;">暂无消息</p>';
+    return;
+  }
+  container.innerHTML = list.map(n => {
+    const icon = n.type === 'like' ? '❤️' : '💬';
+    const action = n.type === 'like' ? '赞了你的日记' : `评论：${n.commentText}`;
+    return `<div class="notif-item ${n.read ? '' : 'unread'}" onclick="markNotifRead('${n.id}')">
+      <span class="notif-icon">${icon}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;"><b>${escapeHtml(n.fromUsername)}</b> ${action}</div>
+        <div style="font-size:11px;color:#999;margin-top:2px;">📝 ${escapeHtml(n.postText)} · ${formatTime(n.createdAt)}</div>
+      </div>
+      ${n.read ? '' : '<span class="red-dot"></span>'}
+    </div>`;
+  }).join('');
+}
+
+async function markNotifRead(notifId) {
+  const { content: notifs, sha } = await ghGetFile('data/notifications.json');
+  const n = (notifs || []).find(x => x.id === notifId);
+  if (n && !n.read) {
+    n.read = true;
+    await ghPutFile('data/notifications.json', notifs, sha);
+  }
+  loadNotifications();
+  // 如果通知关联了日记，打开日记
+  if (n && n.postId) {
+    viewPost(n.postId);
+  }
 }
 
 function closeDetail() {
@@ -1175,6 +1272,7 @@ function showApp() {
   document.getElementById('main-app').style.display = 'block';
   switchTab('feed');
   loadPosts();
+  loadNotifications();
 }
 
 function switchTab(tab) {
@@ -1183,7 +1281,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
   if (tab === 'publish') loadFriendOptions();
-  if (tab === 'friends') loadFriendsPage();
+  if (tab === 'friends') { loadFriendsPage(); loadNotifications(); }
   if (tab === 'settings') loadSettings();
   if (tab === 'feed') loadPosts();
 }
