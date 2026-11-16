@@ -197,5 +197,11 @@ create policy "media_delete_own" on storage.objects
   for delete to authenticated
   using (bucket_id = 'media' and (storage.foldername(name))[1] = auth.uid()::text);
 
+-- ---------- 7. 启动用的第一个邀请码 ----------
+-- 系统刚建好时还没有任何人，所以内置一个码给你自己注册用
+alter table public.invite_codes alter column created_by drop not null;
+insert into public.invite_codes (code) values ('MLYZ01')
+on conflict (code) do nothing;
+
 -- ---------- 完成 ----------
 select '梦里有zhi 数据库初始化完成 ✅' as result;
