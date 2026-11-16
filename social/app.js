@@ -132,10 +132,15 @@ async function doSignup() {
   btn.disabled = true; btn.textContent = '检查邀请码...';
 
   try {
-    const { data: taken } = await sb.rpc('username_taken', { p_username: username });
+    // 先清除可能残留的登录状态
+    await sb.auth.signOut();
+
+    const { data: taken, error: tErr } = await sb.rpc('username_taken', { p_username: username });
+    if (tErr) { showToast('检查昵称失败：' + tErr.message, 4000); return; }
     if (taken) { showToast('这个昵称已被用了，换一个'); return; }
 
-    const { data: valid } = await sb.rpc('check_invite', { p_code: invite });
+    const { data: valid, error: iErr } = await sb.rpc('check_invite', { p_code: invite });
+    if (iErr) { showToast('检查邀请码失败：' + iErr.message, 4000); return; }
     if (!valid) { showToast('邀请码无效或已被使用', 3000); return; }
 
     btn.textContent = '注册中...';
