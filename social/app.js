@@ -161,8 +161,8 @@ function openImageGallery(pid, start) {
   if (!viewer || !content) return;
   content.style.width = '100%';
   content.style.height = '92vh';
-  content.innerHTML = `<div class="gal-track">${urls.map(u =>
-    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"${imgFallbackAttr(u)}></div>`
+  content.innerHTML = `<div class="gal-track">${urls.map((u, i) =>
+    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"${imgFallbackAttr(u)}><span class="gal-idx">${i + 1}/${urls.length}</span></div>`
   ).join('')}</div>`;
   viewer.style.display = 'flex';
   const track = content.querySelector('.gal-track');
