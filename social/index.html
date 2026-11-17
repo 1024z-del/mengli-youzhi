@@ -193,7 +193,7 @@
 
 <!-- 个人主页 -->
 <div id="user-page" class="detail-view" style="display:none;">
-  <div class="detail-card" id="user-page-content" style="padding:0;overflow:hidden;"></div>
+  <div class="detail-card" id="user-page-content" style="padding:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;"></div>
 </div>
 
 <!-- 导出弹窗 -->
@@ -294,7 +294,7 @@
 
 <script>
 // 自动检测更新：如果 app.js 版本变了，自动刷新
-const CURRENT_V = 35;
+const CURRENT_V = 36;
 function checkUpdate() {
   fetch('index.html?t=' + Date.now(), { cache: 'no-store' })
     .then(r => r.text())
@@ -315,6 +315,6 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) checkUpdate();
 });
 </script>
-<script src="app.js?v=35"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>
