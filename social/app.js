@@ -1130,7 +1130,7 @@ function addImage() {
         alert(`${file.name} 太大了，请小于 10MB`);
         continue;
       }
-      const base64 = await compressImage(file, 1200, 0.8);
+      const base64 = await compressImage(file, 1000, 0.7);
       pendingMedia.push({ kind: 'image', data: base64, name: 'img.jpg', mime: 'image/jpeg' });
     }
     input.value = '';
