@@ -1106,7 +1106,7 @@ function addImage() {
 // 尽量把视频压小再上传（快很多），不支持或失败就用原文件
 async function transcodeVideo(file) {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return null;
-  if (file.size < 3 * 1024 * 1024) return null;
+  if (file.size < 1.5 * 1024 * 1024) return null;
   const mimeList = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4'];
   let mime = null;
   for (const t of mimeList) {
@@ -1172,7 +1172,7 @@ async function transcodeVideo(file) {
     const stream = canvas.captureStream(30);
     if (audioTrack) stream.addTrack(audioTrack);
 
-    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1600000, audioBitsPerSecond: 96000 });
+    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 800000, audioBitsPerSecond: 64000 });
     const chunks = [];
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
     const stopped = new Promise(resolve => { rec.onstop = resolve; });
