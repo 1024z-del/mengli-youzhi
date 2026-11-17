@@ -128,7 +128,7 @@ function mediaListHtml(p, cls) {
   galleryStore[p.id] = list.map(m => m.url);
   const cols = list.length === 4 ? 2 : 3;
   const cells = list.map((m, i) => `<div class="img-cell" onclick="event.stopPropagation();openImageGallery('${p.id}',${i})">
-      <img src="${mediaPagesUrl(m.url)}" loading="lazy">
+      <img src="${mediaPagesUrl(m.thumb || m.url)}" loading="lazy" decoding="async">
     </div>`).join('');
   return `<div class="img-grid cols-${cols}">${cells}</div>`;
 }
@@ -162,7 +162,9 @@ function mediaHtml(m, cls) {
   const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
     const clsName = cls === 'post' ? 'post-img' : 'detail-img';
-    return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy"${fallback}>`;
+    const t = m.thumb ? mediaPagesUrl(m.thumb) : '';
+    const bg = t ? ` style="background:url('${t}') center/cover no-repeat;"` : '';
+    return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy" decoding="async"${bg}${fallback}>`;
   }
 
   // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
@@ -1131,7 +1133,8 @@ function addImage() {
         continue;
       }
       const base64 = await compressImage(file, 1000, 0.7);
-      pendingMedia.push({ kind: 'image', data: base64, name: 'img.jpg', mime: 'image/jpeg' });
+      const thumb = await compressImage(file, 320, 0.6);
+      pendingMedia.push({ kind: 'image', data: base64, thumb, name: 'img.jpg', mime: 'image/jpeg' });
     }
     input.value = '';
     renderPendingMedia();
@@ -1340,11 +1343,11 @@ async function publishPost() {
         const m = pendingMedia[i];
         const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
         showUploadProgress(`上传中 ${done}/${total}：${label}${m.kind === 'video' ? '（较大请稍等）' : ''}...`);
-        const posterTask = (m.kind === 'video' && m.thumb)
-          ? ghUploadMedia('thumb.jpg', m.thumb).catch(e => { console.warn('封面图上传失败', e); return null; })
+        const extraTask = m.thumb
+          ? ghUploadMedia('thumb.jpg', m.thumb).catch(e => { console.warn('缩略图上传失败', e); return null; })
           : Promise.resolve(null);
-        const [url, poster] = await Promise.all([ghUploadMedia(m.name, m.data), posterTask]);
-        uploaded[i] = { url, poster };
+        const [url, extra] = await Promise.all([ghUploadMedia(m.name, m.data), extraTask]);
+        uploaded[i] = { url, poster: extra };
         done++;
         showUploadProgress(`上传中 ${done}/${total}...`);
       }
@@ -1358,6 +1361,8 @@ async function publishPost() {
         item.live = !!m.live;
         item.sound = !!m.sound;
         if (u.poster) item.poster = u.poster;
+      } else if (u.poster) {
+        item.thumb = u.poster;
       }
       return item;
     });
