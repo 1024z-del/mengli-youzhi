@@ -1,7 +1,11 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  background: #5f59c6;
+  background:
+    radial-gradient(ellipse 120% 50% at 50% 104%, rgba(255, 175, 235, 0.55), transparent 72%),
+    radial-gradient(ellipse 85% 42% at 0% 100%, rgba(120, 200, 255, 0.4), transparent 72%),
+    radial-gradient(ellipse 85% 42% at 100% 96%, rgba(180, 150, 255, 0.4), transparent 72%),
+    linear-gradient(160deg, #6f5ae8 0%, #8a5ad2 32%, #5a74e8 62%, #a856c4 100%);
   min-height: 100vh;
   color: #333;
 }
@@ -13,17 +17,23 @@ body::before {
   inset: -20%;
   z-index: -2;
   background:
-    radial-gradient(closest-side at 22% 16%, rgba(255, 210, 255, 0.55), transparent),
-    radial-gradient(closest-side at 76% 6%, rgba(255, 246, 230, 0.5), transparent),
-    radial-gradient(closest-side at 88% 30%, rgba(140, 205, 255, 0.5), transparent),
-    radial-gradient(closest-side at 10% 62%, rgba(165, 130, 255, 0.55), transparent),
-    radial-gradient(closest-side at 30% 88%, rgba(255, 175, 230, 0.45), transparent),
-    radial-gradient(closest-side at 78% 84%, rgba(120, 220, 255, 0.42), transparent),
-    radial-gradient(closest-side at 52% 58%, rgba(120, 235, 240, 0.2), transparent),
-    linear-gradient(160deg, #6f5ae8 0%, #8a5ad2 32%, #5a74e8 62%, #a856c4 100%);
+    radial-gradient(closest-side at 22% 14%, rgba(255, 210, 255, 0.6), transparent),
+    radial-gradient(closest-side at 78% 6%, rgba(255, 246, 230, 0.5), transparent),
+    radial-gradient(closest-side at 88% 30%, rgba(140, 205, 255, 0.55), transparent),
+    radial-gradient(closest-side at 8% 52%, rgba(165, 130, 255, 0.55), transparent),
+    radial-gradient(closest-side at 25% 90%, rgba(255, 140, 215, 0.6), transparent),
+    radial-gradient(closest-side at 85% 96%, rgba(90, 200, 255, 0.55), transparent),
+    radial-gradient(closest-side at 55% 72%, rgba(140, 255, 235, 0.28), transparent),
+    radial-gradient(closest-side at 70% 45%, rgba(255, 190, 150, 0.18), transparent),
+    radial-gradient(ellipse 60% 22% at 30% 88%, rgba(255, 165, 225, 0.42), transparent 72%),
+    radial-gradient(ellipse 55% 20% at 72% 97%, rgba(120, 210, 255, 0.42), transparent 72%),
+    radial-gradient(ellipse 70% 18% at 50% 76%, rgba(175, 145, 255, 0.34), transparent 74%),
+    radial-gradient(ellipse 45% 16% at 12% 70%, rgba(255, 225, 180, 0.26), transparent 72%),
+    radial-gradient(ellipse 50% 18% at 92% 62%, rgba(150, 255, 235, 0.26), transparent 72%);
   background-repeat: no-repeat;
-  background-size: 88% 88%, 55% 55%, 70% 70%, 90% 90%, 80% 80%, 75% 75%, 80% 80%, 100% 100%;
-  animation: auroraDrift 26s ease-in-out infinite alternate;
+  background-size: 85% 85%, 55% 55%, 75% 75%, 90% 90%, 80% 80%, 85% 85%, 70% 70%, 65% 65%,
+                   90% 90%, 90% 90%, 100% 100%, 70% 70%, 70% 70%;
+  animation: auroraDrift 18s ease-in-out infinite alternate;
 }
 
 /* 梦幻背景：缓慢旋转的星云 */
@@ -65,7 +75,9 @@ body::after {
     radial-gradient(1.4px 1.4px at 40px 320px, rgba(220, 240, 255, 0.8), transparent),
     radial-gradient(2px 2px at 380px 220px, rgba(255, 255, 255, 0.8), transparent);
   background-size: 260px 260px, 340px 340px, 420px 420px, 200px 200px, 480px 480px, 300px 300px, 380px 380px, 520px 520px, 440px 440px, 360px 360px, 560px 560px;
-  animation: twinkle 7s ease-in-out infinite alternate;
+  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.5) 40%, rgba(0,0,0,0.9) 72%, #000 100%);
+  mask-image: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.5) 40%, rgba(0,0,0,0.9) 72%, #000 100%);
+  animation: twinkle 4.5s ease-in-out infinite alternate;
 }
 
 @keyframes auroraDrift {
@@ -195,14 +207,14 @@ input[type="checkbox"] {
 }
 /* 梦幻渐变标题 */
 .dream-title {
-  background: linear-gradient(90deg, #ffffff 0%, #ecebff 22%, #d9cffb 45%, #f5ecdc 68%, #ffffff 88%, #e9e4ff 100%);
-  background-size: 220% 100%;
+  background: linear-gradient(100deg, #fff8ef 0%, #ffe6d2 12%, #f9d8ef 26%, #e2dcff 42%, #cfe8ff 56%, #e6ddff 70%, #ffeedd 84%, #fff8ef 100%);
+  background-size: 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  filter: drop-shadow(0 1px 10px rgba(255, 255, 255, 0.5));
-  animation: titleShimmer 11s ease-in-out infinite alternate;
+  filter: drop-shadow(0 1px 6px rgba(255, 240, 255, 0.55)) drop-shadow(0 0 16px rgba(200, 180, 255, 0.45));
+  animation: titleShimmer 9s ease-in-out infinite alternate;
 }
 @keyframes titleShimmer {
   from { background-position: 0% 50%; }
@@ -552,9 +564,10 @@ textarea:focus { border-color: #6c5ce7; }
   bottom: 0;
   left: 0;
   right: 0;
-  background: #fff;
+  background: linear-gradient(180deg, rgba(70, 40, 120, 0) 0%, rgba(60, 32, 105, 0.28) 45%, rgba(50, 26, 92, 0.5) 100%);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   display: flex;
-  border-top: 1px solid #eee;
   padding: 8px 0;
   padding-bottom: calc(8px + env(safe-area-inset-bottom));
   z-index: 50;
@@ -569,11 +582,16 @@ textarea:focus { border-color: #6c5ce7; }
   background: transparent;
   cursor: pointer;
   padding: 6px;
-  color: #bbb;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 0.25s, transform 0.25s;
 }
-.tab-btn.active { color: #6c5ce7; }
+.tab-btn.active {
+  color: #fff;
+  transform: translateY(-1px);
+  filter: drop-shadow(0 0 8px rgba(255, 235, 255, 0.75));
+}
 .nav-icon { font-size: 20px; }
-.nav-label { font-size: 11px; }
+.nav-label { font-size: 11px; letter-spacing: 0.3px; }
 
 .danger-btn {
   width: 100%;

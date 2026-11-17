@@ -99,12 +99,13 @@ function mediaHtml(m, cls) {
   }
   // #t=0.1 让 iOS 直接显示首帧作为封面
   const vsrc = `${src}#t=0.1`;
+  const posterAttr = m.poster ? ` poster="${mediaRenderUrl(m.poster)}"` : '';
   if (m.live) {
     return m.sound === false
-      ? `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}" autoplay muted loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`
-      : `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}" controls loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`;
+      ? `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}"${posterAttr} autoplay muted loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`
+      : `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}"${posterAttr} controls loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`;
   }
-  return `<video src="${vsrc}" controls playsinline preload="metadata" class="${vidCls}"${fallback}></video>`;
+  return `<video src="${vsrc}"${posterAttr} controls playsinline preload="metadata" class="${vidCls}"${fallback}></video>`;
 }
 
 // ---- Password hash ----
@@ -929,18 +930,53 @@ function toggleNotifExpand() {
 // ---- Publish ----
 let pendingMedia = []; // { kind:'image'|'video', data, name, mime, live, sound }
 
+function pendingMediaThumb(m) {
+  if (m.kind === 'image') return `data:${m.mime};base64,${m.data}`;
+  if (m.thumb) return `data:image/jpeg;base64,${m.thumb}`;
+  return '';
+}
+
 function renderPendingMedia() {
   const box = document.getElementById('media-preview');
   if (!box) return;
-  box.innerHTML = pendingMedia.map((m, i) => `
-    <div style="position:relative;flex:0 0 auto;">
-      ${m.kind === 'image'
-        ? `<img src="data:${m.mime};base64,${m.data}" style="width:88px;height:88px;border-radius:10px;object-fit:cover;display:block;">`
-        : `<video src="data:${m.mime};base64,${m.data}#t=0.1" style="width:88px;height:88px;border-radius:10px;object-fit:cover;background:#000;display:block;" muted playsinline preload="metadata"></video>`}
-      <button onclick="removePendingMedia(${i})" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:none;background:#ff4757;color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer;">✕</button>
-      ${m.kind === 'video' && m.live ? '<span class="live-badge" style="top:4px;left:4px;font-size:10px;padding:1px 6px;">实况</span>' : ''}
+  box.innerHTML = pendingMedia.map((m, i) => {
+    const thumb = pendingMediaThumb(m);
+    return `
+    <div style="position:relative;flex:0 0 auto;" onclick="previewPendingMedia(${i})">
+      ${thumb
+        ? `<img src="${thumb}" style="width:88px;height:88px;border-radius:10px;object-fit:cover;display:block;cursor:zoom-in;">`
+        : `<div style="width:88px;height:88px;border-radius:10px;background:#2b2140;color:#cfc6ff;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:zoom-in;">${m.kind === 'video' ? '🎬 视频' : '🖼️ 图片'}</div>`}
+      <button onclick="event.stopPropagation();removePendingMedia(${i})" style="position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,71,87,0.95);color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.35);">✕</button>
+      ${m.kind === 'video' && m.live ? '<span class="live-badge" style="top:auto;bottom:3px;left:3px;font-size:10px;padding:1px 6px;">实况</span>' : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
+}
+
+function previewPendingMedia(i) {
+  const m = pendingMedia[i];
+  if (!m) return;
+  const viewer = document.getElementById('media-viewer');
+  const content = document.getElementById('media-viewer-content');
+  if (!viewer || !content) return;
+  if (m.kind === 'image') {
+    content.innerHTML = `<img src="data:${m.mime};base64,${m.data}" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain;">`;
+  } else {
+    content.innerHTML = `<video src="data:${m.mime};base64,${m.data}" controls autoplay playsinline webkit-playsinline style="max-width:100%;max-height:90vh;border-radius:8px;background:#000;"></video>`;
+  }
+  viewer.style.display = 'flex';
+}
+
+function closeMediaViewer() {
+  const viewer = document.getElementById('media-viewer');
+  const content = document.getElementById('media-viewer-content');
+  if (!viewer) return;
+  viewer.style.display = 'none';
+  if (content) {
+    const v = content.querySelector('video');
+    if (v) { v.pause(); v.removeAttribute('src'); }
+    content.innerHTML = '';
+  }
 }
 
 function removePendingMedia(i) {
@@ -954,6 +990,51 @@ function fileToBase64(file) {
     reader.onload = ev => resolve(ev.target.result.split(',')[1]);
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+// 截取视频首帧，生成缩略图（解决编辑页视频显示为黑色）
+function makeVideoThumb(file) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.preload = 'auto';
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('webkit-playsinline', '');
+    v.src = url;
+    v.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;';
+    document.body.appendChild(v);
+    let done = false;
+    const finish = (thumb) => {
+      if (done) return;
+      done = true;
+      try { v.remove(); } catch (e) {}
+      try { URL.revokeObjectURL(url); } catch (e) {}
+      resolve(thumb || '');
+    };
+    const capture = () => {
+      try {
+        const w = v.videoWidth, h = v.videoHeight;
+        if (!w || !h) return finish('');
+        const max = 320;
+        const scale = Math.min(1, max / Math.max(w, h));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(w * scale);
+        canvas.height = Math.round(h * scale);
+        canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL('image/jpeg', 0.72).split(',')[1]);
+      } catch (e) { finish(''); }
+    };
+    v.onloadeddata = () => {
+      try {
+        v.currentTime = 0.1;
+      } catch (e) { capture(); }
+    };
+    v.onseeked = capture;
+    v.onerror = () => finish('');
+    setTimeout(() => { if (!done) capture(); }, 5000);
+    v.load();
   });
 }
 
@@ -991,9 +1072,11 @@ function addVideo(isLive = false) {
         continue;
       }
       const base64 = await fileToBase64(file);
+      const thumb = await makeVideoThumb(file);
       pendingMedia.push({
         kind: 'video',
         data: base64,
+        thumb,
         name: file.name,
         mime: file.type || 'video/mp4',
         live: isLive,
@@ -1042,19 +1125,24 @@ async function publishPost() {
 
     // 所有图片/视频并行上传，明显更快
     let done = 0;
-    const urls = await Promise.all(pendingMedia.map(async (m) => {
+    const uploaded = await Promise.all(pendingMedia.map(async (m) => {
       const url = await ghUploadMedia(m.name, m.data);
+      let poster = null;
+      if (m.kind === 'video' && m.thumb) {
+        poster = await ghUploadMedia('thumb.jpg', m.thumb);
+      }
       done++;
       showToast(`上传中 ${done}/${total}`);
-      return url;
+      return { url, poster };
     }));
 
-    const media = urls.map((url, i) => {
+    const media = uploaded.map((u, i) => {
       const m = pendingMedia[i];
-      const item = { type: m.kind, url };
+      const item = { type: m.kind, url: u.url };
       if (m.kind === 'video') {
         item.live = !!m.live;
         item.sound = !!m.sound;
+        if (u.poster) item.poster = u.poster;
       }
       return item;
     });
