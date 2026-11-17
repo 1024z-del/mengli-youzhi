@@ -1563,7 +1563,7 @@ async function loadSettings() {
   const available = valid.filter(i => !i.used_by);
   document.getElementById('invite-list').innerHTML = available.map(i => {
     const remain = inviteRemaining(i);
-    return `<div style="padding:10px;background:rgba(255,255,255,0.7);border-radius:10px;margin-bottom:8px;">
+    return `<div style="padding:10px;background:rgba(255,255,255,0.55);border-radius:10px;margin-bottom:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <code style="font-size:16px;color:#6c5ce7;">${i.code}</code>
         <button onclick="copyInvite('${i.code}')" class="btn-secondary" style="padding:4px 10px;width:auto;">复制</button>
