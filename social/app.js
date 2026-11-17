@@ -847,7 +847,7 @@ function renderUserPage(userId, user, posts) {
     : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;background:#a78bfa;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>`;
 
   document.getElementById('user-page-content').innerHTML = `
-    <div style="${coverStyle}height:140px;position:relative;">
+    <div style="${coverStyle}height:180px;position:relative;">
       <button onclick="closeUserPage()" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;">‹</button>
       ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;">编辑</button>` : ''}
     </div>
