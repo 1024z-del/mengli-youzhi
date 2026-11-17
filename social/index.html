@@ -103,7 +103,7 @@
           <button class="action-btn" onclick="addVideo(false)">🎬 视频</button>
           <button class="action-btn" onclick="addVideo(true)">🫧 实况</button>
         </div>
-        <p style="font-size:12px;color:#999;margin:4px 0 8px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」。图片/视频都支持一次多选多个。视频较大时上传可能需要一会儿，请保持页面打开。</p>
+        <p style="font-size:12px;color:#999;margin:4px 0 8px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」。图片/视频都支持一次多选多个。视频会自动压缩后再上传，速度更快。</p>
         <input type="file" id="img-input" accept="image/*" multiple style="display:none;">
         <input type="file" id="video-input" accept="video/*" multiple style="display:none;">
 
@@ -299,7 +299,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 49;
+const CURRENT_V = 50;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -327,6 +327,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=49"></script>
+<script src="app.js?v=50"></script>
 </body>
 </html>

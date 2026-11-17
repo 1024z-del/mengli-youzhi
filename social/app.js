@@ -89,16 +89,28 @@ async function ghUploadMedia(name, base64) {
   throw lastErr || new Error('上传失败');
 }
 
-// ---- 媒体地址：优先用 Pages 域名（国内更稳更快），失败再回退 raw ----
+// ---- 媒体地址：优先 jsDelivr CDN（国内更快），失败再回退 Pages / raw ----
 const MEDIA_RAW_PREFIX = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/`;
 const MEDIA_PAGES_PREFIX = `https://${GH.owner}.github.io/${GH.repo}/social/`;
+const MEDIA_CDN_PREFIX = `https://cdn.jsdelivr.net/gh/${GH.owner}/${GH.repo}@${GH.branch}/social/`;
+function mediaRelPath(u) {
+  return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? u.slice(MEDIA_RAW_PREFIX.length) : null;
+}
 function mediaRenderUrl(u) {
-  return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? MEDIA_PAGES_PREFIX + u.slice(MEDIA_RAW_PREFIX.length) : u;
+  const rel = mediaRelPath(u);
+  return rel ? MEDIA_CDN_PREFIX + rel : u;
+}
+// 封面走 Pages（体积小、App 本身也是从 Pages 加载，一定能打开）
+function mediaPagesUrl(u) {
+  const rel = mediaRelPath(u);
+  return rel ? MEDIA_PAGES_PREFIX + rel : u;
 }
 function mediaFallbackAttr(rawUrl) {
-  return rawUrl && rawUrl !== mediaRenderUrl(rawUrl)
-    ? ` onerror="this.onerror=null;this.src='${rawUrl}'"`
-    : '';
+  const rel = mediaRelPath(rawUrl);
+  if (!rel) return '';
+  const pages = MEDIA_PAGES_PREFIX + rel;
+  // 依次回退：CDN → Pages → raw
+  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${pages}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${rawUrl}';}"`;
 }
 function getPostMedia(p) {
   if (Array.isArray(p.media) && p.media.length) return p.media;
@@ -111,17 +123,17 @@ function mediaHtml(m, cls) {
   const raw = m.url;
   const src = mediaRenderUrl(raw);
   const fallback = mediaFallbackAttr(raw);
-  const poster = m.poster ? mediaRenderUrl(m.poster) : '';
+  const poster = m.poster ? mediaPagesUrl(m.poster) : '';
   const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
     const clsName = cls === 'post' ? 'post-img' : 'detail-img';
-    return `<img src="${src}" class="${clsName}" loading="lazy"${fallback}>`;
+    return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy"${fallback}>`;
   }
 
   // 动态列表：只显示封面 + 播放按钮，点击全屏观看，避免点播放时误触打开详情
   if (cls === 'post') {
     const bgStyle = poster ? ` style="background:#0b0718 url('${poster}') center/cover no-repeat;"` : '';
-    return `<div class="media-thumb" onclick="event.stopPropagation();openMediaViewer('${src}','video')">
+    return `<div class="media-thumb" onclick="event.stopPropagation();openMediaViewer('${raw}','video')">
       <video class="post-video" src="${src}#t=0.1"${posterAttr} preload="none" muted playsinline webkit-playsinline${bgStyle}${fallback}></video>
       <span class="media-play">▶</span>
       ${m.live ? '<span class="live-badge">实况</span>' : ''}
@@ -1000,18 +1012,42 @@ function previewPendingMedia(i) {
   viewer.style.display = 'flex';
 }
 
-function openMediaViewer(src, type) {
+function openMediaViewer(rawUrl, type) {
   const viewer = document.getElementById('media-viewer');
   const content = document.getElementById('media-viewer-content');
   if (!viewer || !content) return;
+  const rel = mediaRelPath(rawUrl);
+  const list = rel
+    ? [MEDIA_CDN_PREFIX + rel, MEDIA_PAGES_PREFIX + rel, rawUrl]
+    : [rawUrl];
   if (type === 'image') {
-    content.innerHTML = `<img src="${src}" style="max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain;">`;
-  } else {
-    content.innerHTML = `<video src="${src}" controls autoplay playsinline webkit-playsinline preload="auto" style="max-width:100%;max-height:92vh;border-radius:8px;background:#000;"></video>`;
+    content.innerHTML = `<img src="${list[0]}" style="max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain;">`;
+    viewer.style.display = 'flex';
+    return;
   }
+  content.innerHTML = `<div style="color:#fff;font-size:13px;text-align:center;">视频加载中...</div>`;
   viewer.style.display = 'flex';
-  const v = content.querySelector('video');
-  if (v) v.play().catch(() => {});
+  const v = document.createElement('video');
+  v.controls = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.setAttribute('webkit-playsinline', '');
+  v.preload = 'auto';
+  v.style.cssText = 'max-width:100%;max-height:92vh;border-radius:8px;background:#000;';
+  let idx = 0;
+  v.onloadeddata = () => { const tip = content.querySelector('div'); if (tip) tip.remove(); };
+  v.onerror = () => {
+    idx++;
+    if (idx < list.length) {
+      v.src = list[idx];
+      v.load();
+    } else {
+      content.innerHTML = '<div style="color:#fff;font-size:14px;text-align:center;line-height:1.8;">视频加载失败<br><span style="font-size:12px;opacity:.7;">请检查网络后重试</span></div>';
+    }
+  };
+  v.src = list[0];
+  content.appendChild(v);
+  v.play().catch(() => {});
 }
 
 function closeMediaViewer() {
@@ -1106,6 +1142,103 @@ function addImage() {
   input.click();
 }
 
+// 尽量把视频压小再上传（快很多），不支持或失败就用原文件
+async function transcodeVideo(file) {
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) return null;
+  if (file.size < 3 * 1024 * 1024) return null;
+  const mimeList = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4'];
+  let mime = null;
+  for (const t of mimeList) {
+    try { if (MediaRecorder.isTypeSupported(t)) { mime = t; break; } } catch (e) {}
+  }
+  if (!mime) return null;
+
+  const srcUrl = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src = srcUrl;
+  v.playsInline = true;
+  v.setAttribute('webkit-playsinline', '');
+  v.preload = 'auto';
+  v.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+  document.body.appendChild(v);
+  let actx = null, rec = null, raf = 0;
+  const cleanup = () => {
+    try { cancelAnimationFrame(raf); } catch (e) {}
+    try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (e) {}
+    try { v.pause(); } catch (e) {}
+    try { if (actx) actx.close(); } catch (e) {}
+    try { v.remove(); } catch (e) {}
+    try { URL.revokeObjectURL(srcUrl); } catch (e) {}
+  };
+  try {
+    await new Promise((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error('读取视频超时')), 15000);
+      v.onloadedmetadata = () => { clearTimeout(t); resolve(); };
+      v.onerror = () => { clearTimeout(t); reject(new Error('视频无法读取')); };
+      v.load();
+    });
+    const dur = v.duration || 0;
+    if (!dur || dur > 60) return null;
+
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    actx = new AC();
+    if (actx.state === 'suspended') { try { await actx.resume(); } catch (e) {} }
+    const srcNode = actx.createMediaElementSource(v);
+    const dest = actx.createMediaStreamDestination();
+    srcNode.connect(dest);
+    const audioTrack = dest.stream.getAudioTracks()[0];
+    if (!audioTrack) return null;
+
+    const w0 = v.videoWidth || 720, h0 = v.videoHeight || 1280;
+    const scale = Math.min(1, 960 / Math.max(w0, h0));
+    const cw = Math.max(2, Math.round(w0 * scale / 2) * 2);
+    const ch = Math.max(2, Math.round(h0 * scale / 2) * 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+
+    const stream = canvas.captureStream(30);
+    stream.addTrack(audioTrack);
+
+    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1600000, audioBitsPerSecond: 96000 });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(resolve => { rec.onstop = resolve; });
+
+    v.muted = false;
+    try {
+      await v.play();
+    } catch (e) {
+      console.warn('自动播放被拦截，改用原视频', e);
+      return null;
+    }
+    rec.start(500);
+    const draw = () => {
+      try { ctx.drawImage(v, 0, 0, cw, ch); } catch (e) {}
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+    await new Promise(resolve => {
+      v.onended = resolve;
+      setTimeout(resolve, dur * 1000 + 8000);
+    });
+    cancelAnimationFrame(raf);
+    if (rec.state !== 'inactive') rec.stop();
+    await stopped;
+
+    const blob = new Blob(chunks, { type: mime });
+    if (!blob.size || blob.size >= file.size * 0.85) return null;
+    const ext = mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+    return new File([blob], String(file.name || 'video').replace(/\.[^.]+$/, '') + '.' + ext, { type: blob.type });
+  } catch (e) {
+    console.warn('视频压缩失败，改用原视频', e);
+    return null;
+  } finally {
+    cleanup();
+  }
+}
+
 function addVideo(isLive = false) {
   const input = document.getElementById('video-input');
   input.onchange = async e => {
@@ -1117,20 +1250,28 @@ function addVideo(isLive = false) {
         alert(`${file.name} 太大了，请小于 20MB`);
         continue;
       }
-      const base64 = await fileToBase64(file);
+      // 先尝试压缩，能显著加快上传；失败就用原视频
+      showToast('正在压缩视频，请稍等...');
+      let uploadFile = file;
+      try {
+        const small = await transcodeVideo(file);
+        if (small) uploadFile = small;
+      } catch (e) { console.warn(e); }
+      showToast('正在读取视频...');
+      const base64 = await fileToBase64(uploadFile);
       const item = {
         kind: 'video',
         data: base64,
         thumb: '',
-        name: file.name,
-        mime: file.type || 'video/mp4',
+        name: uploadFile.name,
+        mime: uploadFile.type || 'video/mp4',
         live: isLive,
         sound: true
       };
       pendingMedia.push(item);
       renderPendingMedia();
       // 封面子图后台生成，不耽误选中和上传
-      makeVideoThumb(file).then(t => {
+      makeVideoThumb(uploadFile).then(t => {
         if (t) { item.thumb = t; renderPendingMedia(); }
       });
     }
