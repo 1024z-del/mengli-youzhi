@@ -1367,21 +1367,36 @@ function renderLocationResults(list) {
       <div class="loc-addr">${escapeHtml(r.addr)}</div>
     </div>`).join('');
 }
+async function fetchWithTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms || 8000);
+  try {
+    return await fetch(url, { signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function photonToLoc(f) {
+  const p = (f && f.properties) || {};
+  const coords = (f && f.geometry && f.geometry.coordinates) || [];
+  const name = p.name || p.street || p.locality || p.city || p.district || p.state || '未知地点';
+  const addr = [p.country, p.state, p.city, p.county, p.district, p.locality, p.street, p.housenumber].filter(Boolean).join(' ');
+  return { name, addr: addr || name, lat: coords[1], lon: coords[0] };
+}
 async function useCurrentLocation() {
   if (!navigator.geolocation) { alert('当前浏览器不支持定位'); return; }
   const c = document.getElementById('location-results');
   c.innerHTML = '<p style="color:#6c5ce7;text-align:center;padding:16px 0;">正在定位...</p>';
   navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude: lat, longitude: lon } = pos.coords;
     try {
-      const { latitude: lat, longitude: lon } = pos.coords;
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=zh-CN`);
+      const res = await fetchWithTimeout(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&limit=1`, 8000);
       const j = await res.json();
-      const a = j.address || {};
-      const name = a.city || a.town || a.county || a.state || j.name || '当前位置';
-      const addr = j.display_name || name;
-      renderLocationResults([{ name: name + (a.suburb ? ' · ' + a.suburb : ''), addr, lat, lon }]);
+      const f = (j.features || [])[0];
+      const loc = f ? photonToLoc(f) : { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, addr: '未取到地名', lat, lon };
+      renderLocationResults([loc]);
     } catch (e) {
-      c.innerHTML = '<p style="color:#e0555a;text-align:center;padding:16px 0;">定位成功，但没取到地名，可直接搜索</p>';
+      renderLocationResults([{ name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, addr: '未取到地名（可搜索添加）', lat, lon }]);
     }
   }, (err) => {
     c.innerHTML = '';
@@ -1394,14 +1409,9 @@ async function searchLocation() {
   const c = document.getElementById('location-results');
   c.innerHTML = '<p style="color:#6c5ce7;text-align:center;padding:16px 0;">搜索中...</p>';
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=zh-CN&q=${encodeURIComponent(q)}`);
+    const res = await fetchWithTimeout(`https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=10`, 8000);
     const j = await res.json();
-    renderLocationResults(j.map(r => ({
-      name: r.name || (r.display_name || '').split(',')[0],
-      addr: r.display_name || '',
-      lat: r.lat,
-      lon: r.lon
-    })));
+    renderLocationResults((j.features || []).map(photonToLoc));
   } catch (e) {
     c.innerHTML = '<p style="color:#e0555a;text-align:center;padding:16px 0;">搜索失败，请检查网络后重试</p>';
   }
