@@ -206,31 +206,31 @@ input[type="checkbox"] {
 }
 /* 梦幻渐变标题 */
 .dream-title {
+  display: inline-block;
+  font-size: 23px;
+  line-height: 1.25;
   background: linear-gradient(100deg,
-    #f7f3ea 0%,
-    #cdb07a 8%,
-    #fdf6e9 14%,
-    #b8935a 22%,
-    #e3cfa4 30%,
-    #fbf4e6 38%,
-    #c9a86e 46%,
-    #f6efdf 54%,
-    #b08c52 62%,
-    #e6d3ab 70%,
-    #fcf7ec 78%,
-    #cbb07c 86%,
-    #b8935a 93%,
-    #f7f3ea 100%);
-  background-size: 240% 100%;
+    #8a6a32 0%,
+    #f6e4b8 9%,
+    #fffdf4 17%,
+    #c69c54 27%,
+    #8a6a32 37%,
+    #f2ddae 48%,
+    #fffdf7 58%,
+    #c9a05a 70%,
+    #8a6a32 82%,
+    #f8eccd 93%,
+    #fffdf7 100%);
+  background-size: 150% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  font-weight: 600;
-  letter-spacing: 1.6px;
-  -webkit-text-stroke: 0.3px rgba(255, 244, 219, 0.35);
-  filter: drop-shadow(0 1px 0 rgba(58, 40, 12, 0.5));
-  animation: titleShimmer 22s ease-in-out infinite alternate;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  -webkit-text-stroke: 0.4px rgba(255, 251, 236, 0.5);
+  filter: drop-shadow(0 1px 1px rgba(45, 28, 6, 0.65)) drop-shadow(0 0 7px rgba(255, 205, 130, 0.3));
+  animation: titleShimmer 7s ease-in-out infinite alternate;
 }
 @keyframes titleShimmer {
   from { background-position: 0% 50%; }
