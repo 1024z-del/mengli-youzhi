@@ -1345,14 +1345,116 @@ function hideUploadProgress() {
 // ---- 所在位置 ----
 let pickedLocation = null;
 let locResults = [];
+let locMap = null, locMarker = null, locMapSelected = null, locGeoSeq = 0;
+
+// WGS84 <-> GCJ02（高德/腾讯地图瓦片使用 GCJ02，GPS 与地名服务使用 WGS84）
+const GCJ_A = 6378245.0, GCJ_EE = 0.00669342162296594323;
+function outOfChina(lat, lng) { return !(lng > 73.66 && lng < 135.05 && lat > 3.86 && lat < 53.55); }
+function gcjTLat(x, y) {
+  let r = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  r += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+  r += (20 * Math.sin(y * Math.PI) + 40 * Math.sin(y / 3 * Math.PI)) * 2 / 3;
+  r += (160 * Math.sin(y / 12 * Math.PI) + 320 * Math.sin(y * Math.PI / 30)) * 2 / 3;
+  return r;
+}
+function gcjTLng(x, y) {
+  let r = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  r += (20 * Math.sin(6 * x * Math.PI) + 20 * Math.sin(2 * x * Math.PI)) * 2 / 3;
+  r += (20 * Math.sin(x * Math.PI) + 40 * Math.sin(x / 3 * Math.PI)) * 2 / 3;
+  r += (150 * Math.sin(x / 12 * Math.PI) + 300 * Math.sin(x / 30 * Math.PI)) * 2 / 3;
+  return r;
+}
+function wgs2gcj(lat, lng) {
+  if (outOfChina(lat, lng)) return { lat, lng };
+  let dLat = gcjTLat(lng - 105, lat - 35), dLng = gcjTLng(lng - 105, lat - 35);
+  const radLat = lat / 180 * Math.PI;
+  let magic = Math.sin(radLat); magic = 1 - GCJ_EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sqrtMagic) * Math.PI);
+  dLng = (dLng * 180) / (GCJ_A / sqrtMagic * Math.cos(radLat) * Math.PI);
+  return { lat: lat + dLat, lng: lng + dLng };
+}
+function gcj2wgs(lat, lng) {
+  const g = wgs2gcj(lat, lng);
+  return { lat: lat * 2 - g.lat, lng: lng * 2 - g.lng };
+}
 
 function openLocationModal() {
   document.getElementById('location-modal').style.display = 'flex';
   openOverlay('location-modal');
   document.getElementById('location-results').innerHTML = '';
+  const base = pickedLocation || { lat: 30.2741, lng: 120.1551 };
+  setTimeout(() => initLocMap(base.lat, base.lng, !!pickedLocation), 120);
 }
 function closeLocationModal() {
   closeOverlay('location-modal');
+}
+function initLocMap(wgsLat, wgsLng, keepName) {
+  if (typeof L === 'undefined') {
+    document.getElementById('loc-map').style.display = 'none';
+    return;
+  }
+  document.getElementById('loc-map').style.display = 'block';
+  const g = wgs2gcj(wgsLat, wgsLng);
+  if (!locMap) {
+    locMap = L.map('loc-map', { attributionControl: false, zoomControl: true }).setView([g.lat, g.lng], 17);
+    L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+      subdomains: '1234', maxZoom: 18, minZoom: 3
+    }).addTo(locMap);
+    locMarker = L.marker([g.lat, g.lng], { draggable: true }).addTo(locMap);
+    locMarker.on('dragend', () => {
+      const p = locMarker.getLatLng();
+      onMapPick(p.lat, p.lng);
+    });
+    locMap.on('click', (e) => {
+      locMarker.setLatLng(e.latlng);
+      onMapPick(e.latlng.lat, e.latlng.lng);
+    });
+  } else {
+    locMap.setView([g.lat, g.lng], 17);
+    locMarker.setLatLng([g.lat, g.lng]);
+  }
+  setTimeout(() => locMap.invalidateSize(), 200);
+  if (keepName && pickedLocation) {
+    locMapSelected = { name: pickedLocation.name, lat: pickedLocation.lat, lng: pickedLocation.lng };
+    document.getElementById('loc-picked').textContent = '📍 ' + pickedLocation.name;
+  } else {
+    onMapPick(g.lat, g.lng);
+  }
+}
+async function onMapPick(gcjLat, gcjLng) {
+  const w = gcj2wgs(gcjLat, gcjLng);
+  locMapSelected = { name: '', lat: w.lat, lng: w.lng };
+  const label = document.getElementById('loc-picked');
+  label.textContent = '正在获取地址...';
+  const coords = `${w.lat.toFixed(5)}, ${w.lng.toFixed(5)}`;
+  const seq = ++locGeoSeq;
+  try {
+    const res = await fetchWithTimeout(`https://photon.komoot.io/reverse?lat=${w.lat}&lon=${w.lng}&limit=1`, 8000);
+    const j = await res.json();
+    if (seq !== locGeoSeq) return;
+    const f = (j.features || [])[0];
+    if (f) {
+      const loc = photonToLoc(f);
+      locMapSelected.name = loc.name || loc.addr || coords;
+      label.textContent = '📍 ' + locMapSelected.name + (loc.addr && loc.addr !== loc.name ? ' · ' + loc.addr : '');
+    } else {
+      locMapSelected.name = coords;
+      label.textContent = '📍 ' + coords;
+    }
+  } catch (e) {
+    if (seq !== locGeoSeq) return;
+    locMapSelected.name = coords;
+    label.textContent = '📍 ' + coords;
+  }
+}
+function confirmMapLocation() {
+  if (!locMapSelected || !locMapSelected.name) { alert('请先在地图上选择位置'); return; }
+  pickedLocation = { name: locMapSelected.name, lat: locMapSelected.lat, lng: locMapSelected.lng };
+  const btn = document.getElementById('btn-location');
+  btn.textContent = '📍 ' + pickedLocation.name;
+  btn.style.color = '#4b3fa8';
+  closeLocationModal();
 }
 function renderLocationResults(list) {
   locResults = list;
@@ -1389,15 +1491,15 @@ async function useCurrentLocation() {
   c.innerHTML = '<p style="color:#6c5ce7;text-align:center;padding:16px 0;">正在定位...</p>';
   navigator.geolocation.getCurrentPosition(async (pos) => {
     const { latitude: lat, longitude: lon } = pos.coords;
-    try {
-      const res = await fetchWithTimeout(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&limit=1`, 8000);
-      const j = await res.json();
-      const f = (j.features || [])[0];
-      const loc = f ? photonToLoc(f) : { name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, addr: '未取到地名', lat, lon };
-      renderLocationResults([loc]);
-    } catch (e) {
-      renderLocationResults([{ name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`, addr: '未取到地名（可搜索添加）', lat, lon }]);
+    const g = wgs2gcj(lat, lon);
+    if (locMap) {
+      locMap.setView([g.lat, g.lng], 17);
+      locMarker.setLatLng([g.lat, g.lng]);
+    } else {
+      initLocMap(lat, lon, false);
     }
+    onMapPick(g.lat, g.lng);
+    c.innerHTML = '<p style="color:#999;text-align:center;padding:8px 0;font-size:12px;">已定位到当前位置，可拖动图钉微调</p>';
   }, (err) => {
     c.innerHTML = '';
     alert('定位失败：' + (err.code === 1 ? '未授权定位，请在系统设置里允许浏览器访问位置' : err.message));
@@ -1419,7 +1521,15 @@ async function searchLocation() {
 function pickLocation(i) {
   const r = locResults[i];
   if (!r) return;
-  pickedLocation = { name: r.name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
+  const lat = parseFloat(r.lat), lng = parseFloat(r.lon);
+  if (locMap && !isNaN(lat) && !isNaN(lng)) {
+    const g = wgs2gcj(lat, lng);
+    locMap.setView([g.lat, g.lng], 17);
+    locMarker.setLatLng([g.lat, g.lng]);
+    locMapSelected = { name: r.name, lat, lng };
+    document.getElementById('loc-picked').textContent = '📍 ' + r.name;
+  }
+  pickedLocation = { name: r.name, lat, lng };
   const btn = document.getElementById('btn-location');
   btn.textContent = '📍 ' + r.name;
   btn.style.color = '#4b3fa8';
@@ -1427,6 +1537,7 @@ function pickLocation(i) {
 }
 function clearLocation() {
   pickedLocation = null;
+  locMapSelected = null;
   const btn = document.getElementById('btn-location');
   btn.textContent = '不显示位置';
   btn.style.color = '#6c5ce7';
