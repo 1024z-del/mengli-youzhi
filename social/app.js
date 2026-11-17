@@ -1551,6 +1551,8 @@ function formatCountdown(ms) {
 let countdownTimer = null;
 
 async function loadSettings() {
+  const vEl = document.getElementById('app-version');
+  if (vEl) vEl.textContent = 'v' + (typeof CURRENT_V !== 'undefined' ? CURRENT_V : '—');
   const { content: invites, sha } = await ghGetFile('data/invites.json');
   // 清理过期的
   const valid = cleanExpiredInvites(invites);

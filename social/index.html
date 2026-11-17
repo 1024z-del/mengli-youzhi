@@ -125,7 +125,14 @@
 
     <!-- 设置页 -->
     <section id="tab-settings" class="tab-content" style="display:none;">
-      <div class="publish-card">
+      <div class="publish-card" style="display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <h3 style="margin:0;">ℹ️ 当前版本</h3>
+          <p style="color:#888;font-size:12px;margin-top:4px;">每次改动会自动升级到最新版</p>
+        </div>
+        <span id="app-version" style="font-size:18px;font-weight:700;color:#6c5ce7;">v—</span>
+      </div>
+      <div class="publish-card" style="margin-top:12px;">
         <h3>👤 个人信息</h3>
         <div id="profile-preview" style="display:flex;align-items:center;gap:12px;margin:12px 0;cursor:pointer;" onclick="openMyUserPage()">
           <img id="profile-avatar-preview" src="" style="width:50px;height:50px;border-radius:50%;object-fit:cover;background:#eee;">
@@ -301,7 +308,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 60;
+const CURRENT_V = 61;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -329,6 +336,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=60"></script>
+<script src="app.js?v=61"></script>
 </body>
 </html>
