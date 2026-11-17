@@ -439,7 +439,7 @@ function renderFeed(posts) {
       </div>
       ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
       ${p.video ? (p.live
-        ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+        ? `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
         : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
       <p class="post-text">${escapeHtml(p.text)}</p>
       <div class="post-time">${formatTime(p.createdAt)}</div>
@@ -585,7 +585,7 @@ function renderPostDetail(id) {
     </div>
     ${post.image ? `<img src="${post.image}" class="detail-img">` : ''}
     ${post.video ? (post.live
-      ? `<div class="live-wrap"><video src="${post.video}" class="detail-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+      ? `<div class="live-wrap"><video src="${post.video}" class="detail-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
       : `<video src="${post.video}" controls class="detail-video"></video>`) : ''}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     <div class="post-time">${formatTime(post.createdAt)}</div>
@@ -870,7 +870,7 @@ function renderUserPage(userId, user, posts) {
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
             ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
             ${p.video ? (p.live
-              ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+              ? `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
               : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
             <p class="post-text">${escapeHtml(p.text)}</p>
             <div class="post-time">${formatTime(p.createdAt)}</div>

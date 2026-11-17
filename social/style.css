@@ -146,20 +146,18 @@ input:focus { border-color: #6c5ce7; }
 
 /* 主应用 */
 .top-bar {
-  background: #fff;
+  background: transparent;
   padding: 9px 20px;
   padding-top: calc(9px + env(safe-area-inset-top));
   text-align: center;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 10;
 }
 .top-bar h1 {
-  color: #6c5ce7;
+  color: #fff;
   font-size: 18px;
   letter-spacing: 0.5px;
-  text-shadow: 0 2px 12px rgba(108, 92, 231, 0.28);
+  text-shadow: 0 2px 16px rgba(255, 170, 235, 0.75), 0 1px 3px rgba(60, 30, 120, 0.45);
 }
 .top-manage-btn {
   position: absolute;
@@ -167,10 +165,10 @@ input:focus { border-color: #6c5ce7; }
   top: calc(21px + env(safe-area-inset-top));
   transform: translateY(-50%);
   padding: 4px 10px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 12px;
-  background: #f5f3ff;
-  color: #6c5ce7;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
   font-size: 12px;
 }
 
@@ -186,7 +184,7 @@ input:focus { border-color: #6c5ce7; }
 
 /* 发布卡片 */
 .publish-card {
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.8);
   border-radius: 16px;
   padding: 16px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
@@ -259,7 +257,7 @@ textarea:focus { border-color: #6c5ce7; }
 
 /* 动态列表 */
 .post-card {
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.8);
   border-radius: 16px;
   padding: 16px;
   margin-bottom: 10px;
