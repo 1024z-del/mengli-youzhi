@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=24">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -94,6 +94,11 @@
             <option value="friends">👥 所有好友</option>
             <option value="selected">📩 指定好友</option>
           </select>
+        </div>
+
+        <div class="vis-box">
+          <label>📍 所在位置：</label>
+          <button id="btn-location" onclick="openLocationModal()" style="flex:1;text-align:left;padding:8px 12px;border:1px solid rgba(255,255,255,0.45);background:rgba(255,255,255,0.32);border-radius:10px;color:#6c5ce7;font-size:14px;cursor:pointer;">不显示位置</button>
         </div>
 
         <div id="friend-options" style="display:none;background:rgba(255,255,255,0.32);border:1px solid rgba(255,255,255,0.45);padding:12px;border-radius:10px;margin:10px 0;"></div>
@@ -241,6 +246,23 @@
   </div>
 </div>
 
+<!-- 位置选择弹窗 -->
+<div id="location-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:420px;">
+    <h3>📍 所在位置</h3>
+    <div style="display:flex;gap:6px;margin:12px 0;">
+      <input type="text" id="location-search-input" placeholder="搜索地点，如：西湖、万象城" style="flex:1;margin:0;padding:10px 12px;border:1px solid rgba(255,255,255,0.5);background:rgba(255,255,255,0.5);border-radius:10px;font-size:14px;outline:none;" onkeydown="if(event.key==='Enter')searchLocation()">
+      <button onclick="searchLocation()" style="flex-shrink:0;padding:0 14px;border:none;border-radius:10px;background:linear-gradient(135deg,#7b6cf0,#9b6ae0);color:#fff;font-size:14px;cursor:pointer;">搜索</button>
+    </div>
+    <button onclick="useCurrentLocation()" class="btn-secondary" style="margin:0 0 10px;">🎯 使用当前位置</button>
+    <div id="location-results" style="max-height:300px;overflow-y:auto;font-size:14px;"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn-secondary" onclick="clearLocation()" style="margin:0;flex:1;">不显示位置</button>
+      <button class="btn-secondary" onclick="closeLocationModal()" style="margin:0;flex:1;">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- 回收站弹窗 -->
 <div id="trash-modal" class="detail-view" style="display:none;">
   <div class="detail-card" style="max-width:420px;">
@@ -308,7 +330,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 65;
+const CURRENT_V = 66;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -336,6 +358,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=65"></script>
+<script src="app.js?v=66"></script>
 </body>
 </html>

@@ -579,6 +579,7 @@ function renderFeed(posts) {
       </div>
       ${mediaListHtml(p, 'post')}
       <p class="post-text">${escapeHtml(p.text)}</p>
+      ${p.location && p.location.name ? `<div class="post-loc">📍 ${escapeHtml(p.location.name)}</div>` : ''}
       <div class="post-time">${formatTime(p.createdAt)}</div>
       <div class="post-actions">
         <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="event.stopPropagation();toggleLike('${p.id}')">
@@ -722,6 +723,7 @@ function renderPostDetail(id) {
     </div>
     ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
     <p class="detail-text">${escapeHtml(post.text)}</p>
+    ${post.location && post.location.name ? `<div class="post-loc">📍 ${escapeHtml(post.location.name)}</div>` : ''}
     <div class="post-time">${formatTime(post.createdAt)}</div>
     <div class="post-actions" style="margin:12px 0;">
       <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="toggleLike('${post.id}')">
@@ -1340,6 +1342,87 @@ function hideUploadProgress() {
   if (el) el.remove();
 }
 
+// ---- 所在位置 ----
+let pickedLocation = null;
+let locResults = [];
+
+function openLocationModal() {
+  document.getElementById('location-modal').style.display = 'flex';
+  openOverlay('location-modal');
+  document.getElementById('location-results').innerHTML = '';
+}
+function closeLocationModal() {
+  closeOverlay('location-modal');
+}
+function renderLocationResults(list) {
+  locResults = list;
+  const c = document.getElementById('location-results');
+  if (!list.length) {
+    c.innerHTML = '<p style="color:#999;text-align:center;padding:16px 0;">没有找到相关地点</p>';
+    return;
+  }
+  c.innerHTML = list.map((r, i) => `
+    <div class="loc-item" onclick="pickLocation(${i})">
+      <div class="loc-name">${escapeHtml(r.name)}</div>
+      <div class="loc-addr">${escapeHtml(r.addr)}</div>
+    </div>`).join('');
+}
+async function useCurrentLocation() {
+  if (!navigator.geolocation) { alert('当前浏览器不支持定位'); return; }
+  const c = document.getElementById('location-results');
+  c.innerHTML = '<p style="color:#6c5ce7;text-align:center;padding:16px 0;">正在定位...</p>';
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    try {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=zh-CN`);
+      const j = await res.json();
+      const a = j.address || {};
+      const name = a.city || a.town || a.county || a.state || j.name || '当前位置';
+      const addr = j.display_name || name;
+      renderLocationResults([{ name: name + (a.suburb ? ' · ' + a.suburb : ''), addr, lat, lon }]);
+    } catch (e) {
+      c.innerHTML = '<p style="color:#e0555a;text-align:center;padding:16px 0;">定位成功，但没取到地名，可直接搜索</p>';
+    }
+  }, (err) => {
+    c.innerHTML = '';
+    alert('定位失败：' + (err.code === 1 ? '未授权定位，请在系统设置里允许浏览器访问位置' : err.message));
+  }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+async function searchLocation() {
+  const q = document.getElementById('location-search-input').value.trim();
+  if (!q) return;
+  const c = document.getElementById('location-results');
+  c.innerHTML = '<p style="color:#6c5ce7;text-align:center;padding:16px 0;">搜索中...</p>';
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=zh-CN&q=${encodeURIComponent(q)}`);
+    const j = await res.json();
+    renderLocationResults(j.map(r => ({
+      name: r.name || (r.display_name || '').split(',')[0],
+      addr: r.display_name || '',
+      lat: r.lat,
+      lon: r.lon
+    })));
+  } catch (e) {
+    c.innerHTML = '<p style="color:#e0555a;text-align:center;padding:16px 0;">搜索失败，请检查网络后重试</p>';
+  }
+}
+function pickLocation(i) {
+  const r = locResults[i];
+  if (!r) return;
+  pickedLocation = { name: r.name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) };
+  const btn = document.getElementById('btn-location');
+  btn.textContent = '📍 ' + r.name;
+  btn.style.color = '#4b3fa8';
+  closeLocationModal();
+}
+function clearLocation() {
+  pickedLocation = null;
+  const btn = document.getElementById('btn-location');
+  btn.textContent = '不显示位置';
+  btn.style.color = '#6c5ce7';
+  closeLocationModal();
+}
+
 async function publishPost() {
   const text = document.getElementById('post-text').value.trim();
   const visibility = document.getElementById('visibility').value;
@@ -1398,6 +1481,7 @@ async function publishPost() {
       video: (media.find(m => m.type === 'video') || {}).url || null,
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
+      location: pickedLocation ? { name: pickedLocation.name, lat: pickedLocation.lat, lng: pickedLocation.lng } : null,
       likes: [],
       comments: [],
       createdAt: new Date().toISOString()
@@ -1418,6 +1502,7 @@ async function publishPost() {
     renderPendingMedia();
     document.getElementById('post-text').value = '';
     document.getElementById('visibility').value = 'private';
+    clearLocation();
 
     hideUploadProgress();
     showToast('✅ 发布成功！');
@@ -1484,7 +1569,7 @@ async function loadFriendsPage() {
       <div class="friend-row">
         ${getAvatarHtml(u.username, u.avatar, u.id)}
         <span class="friend-name">${escapeHtml(u.username)}</span>
-        <button onclick="addFriend('${u.id}')" class="friend-add">+ 加</button>
+        <button onclick="addFriend('${u.id}')" class="friend-add">+ 加好友</button>
       </div>
     `).join('');
   } else {
