@@ -207,7 +207,7 @@ input[type="checkbox"] {
   letter-spacing: 0.4px;
   padding: 5px 13px;
   border-radius: 8px;
-  background: rgba(24, 18, 32, 0.2);
+  background: rgba(24, 18, 32, 0.15);
   border: 1px solid rgba(219, 184, 122, 0.62);
   box-shadow:
     inset 0 0 0 1px rgba(255, 246, 228, 0.08),
@@ -234,7 +234,6 @@ input[type="checkbox"] {
   color: transparent;
   font-weight: 500;
   letter-spacing: 0.8px;
-  -webkit-text-stroke: 0.3px rgba(74, 50, 16, 0.5);
   filter: drop-shadow(0 1px 2px rgba(30, 16, 4, 0.55));
   animation: titleShimmer 12s ease-in-out infinite alternate;
 }
