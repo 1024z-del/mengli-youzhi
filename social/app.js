@@ -119,6 +119,41 @@ function getPostMedia(p) {
   if (p.video) list.push({ type: 'video', url: p.video, live: !!p.live, sound: p.liveSound !== false });
   return list;
 }
+// 动态里多张图片：朋友圈式九宫格；点开可左右滑动查看
+const galleryStore = {};
+function mediaListHtml(p, cls) {
+  const list = getPostMedia(p);
+  const allImgs = list.length > 1 && list.every(m => m.type === 'image');
+  if (cls !== 'post' || !allImgs) return list.map(m => mediaHtml(m, cls)).join('');
+  galleryStore[p.id] = list.map(m => m.url);
+  const cols = list.length === 4 ? 2 : 3;
+  const cells = list.map((m, i) => `<div class="img-cell" onclick="event.stopPropagation();openImageGallery('${p.id}',${i})">
+      <img src="${mediaPagesUrl(m.url)}" loading="lazy">
+    </div>`).join('');
+  return `<div class="img-grid cols-${cols}">${cells}</div>`;
+}
+
+function openImageGallery(pid, start) {
+  const urls = galleryStore[pid] || [];
+  if (!urls.length) return;
+  const viewer = document.getElementById('media-viewer');
+  const content = document.getElementById('media-viewer-content');
+  if (!viewer || !content) return;
+  content.style.width = '100%';
+  content.style.height = '92vh';
+  content.innerHTML = `<div class="gal-track">${urls.map(u =>
+    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"></div>`
+  ).join('')}</div>`;
+  viewer.style.display = 'flex';
+  const track = content.querySelector('.gal-track');
+  // 点空白/轻点关闭；左右滑动时不误触关闭
+  let startX = 0, moved = false;
+  track.addEventListener('touchstart', e => { startX = e.touches[0].clientX; moved = false; }, { passive: true });
+  track.addEventListener('touchmove', e => { if (Math.abs(e.touches[0].clientX - startX) > 8) moved = true; }, { passive: true });
+  track.addEventListener('click', () => { if (!moved) closeMediaViewer(); });
+  requestAnimationFrame(() => { track.scrollLeft = start * track.clientWidth; });
+}
+
 function mediaHtml(m, cls) {
   const raw = m.url;
   const src = mediaRenderUrl(raw);
@@ -520,7 +555,7 @@ function renderFeed(posts) {
           <span class="post-vis">${visLabel(p.visibility)}</span>
         </div>
       </div>
-      ${getPostMedia(p).map(m => mediaHtml(m, 'post')).join('')}
+      ${mediaListHtml(p, 'post')}
       <p class="post-text">${escapeHtml(p.text)}</p>
       <div class="post-time">${formatTime(p.createdAt)}</div>
       <div class="post-actions">
@@ -945,7 +980,7 @@ function renderUserPage(userId, user, posts) {
       <div style="margin-top:10px;">
         ${posts.length ? posts.map(p => `
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
-            ${getPostMedia(p).map(m => mediaHtml(m, 'post')).join('')}
+            ${mediaListHtml(p, 'post')}
             <p class="post-text">${escapeHtml(p.text)}</p>
             <div class="post-time">${formatTime(p.createdAt)}</div>
           </div>
@@ -1020,6 +1055,8 @@ function closeMediaViewer() {
     const v = content.querySelector('video');
     if (v) { v.pause(); v.removeAttribute('src'); }
     content.innerHTML = '';
+    content.style.width = '';
+    content.style.height = '';
   }
 }
 
