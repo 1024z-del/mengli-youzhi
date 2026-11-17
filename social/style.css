@@ -282,6 +282,20 @@ textarea:focus { border-color: #6c5ce7; }
 }
 
 /* 详情页 */
+/* 个人主页（全屏、独立滚动） */
+.user-page {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  display: block;
+  z-index: 100;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
 .detail-view {
   position: fixed;
   inset: 0;

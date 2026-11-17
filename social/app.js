@@ -88,6 +88,8 @@ function openOverlay(id) {
   const el = document.getElementById(id);
   // 栈顶的弹窗 z-index 最高，确保盖在其他弹窗上面
   if (el) el.style.zIndex = 100 + overlayStack.length;
+  // 锁定页面滚动，避免滑动弹窗时把后面的列表带动
+  document.body.style.overflow = 'hidden';
   history.pushState({ overlay: id }, '');
 }
 function closeOverlay(id) {
@@ -121,7 +123,10 @@ window.addEventListener('popstate', (e) => {
     if (overlayStack.length) {
       const prev = overlayStack[overlayStack.length - 1];
       const prevEl = document.getElementById(prev);
-      if (prevEl) prevEl.style.display = 'flex';
+      if (prevEl) prevEl.style.display = (prev === 'user-page') ? 'block' : 'flex';
+    } else {
+      // 弹窗全部关闭，恢复页面滚动
+      document.body.style.overflow = '';
     }
   }
   // 如果有关闭后要打开的日记，现在打开
@@ -810,7 +815,7 @@ async function openUserPage(userId) {
     .filter(p => p.authorId === userId && canViewPost(p, currentUser.id))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   renderUserPage(userId, user, visible);
-  document.getElementById('user-page').style.display = 'flex';
+  document.getElementById('user-page').style.display = 'block';
   openOverlay('user-page');
 
   // 后台刷新用户信息和动态
@@ -847,9 +852,9 @@ function renderUserPage(userId, user, posts) {
     : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;background:#a78bfa;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>`;
 
   document.getElementById('user-page-content').innerHTML = `
-    <div style="${coverStyle}height:180px;position:relative;">
-      <button onclick="closeUserPage()" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;">‹</button>
-      ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;">编辑</button>` : ''}
+    <div style="${coverStyle}height:220px;position:relative;margin-top:0;">
+      <button onclick="closeUserPage()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;">‹</button>
+      ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;">编辑</button>` : ''}
     </div>
     <div style="padding:0 16px 16px;position:relative;">
       <div style="margin-top:-36px;">${avatarHtml}</div>
