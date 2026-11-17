@@ -438,7 +438,9 @@ function renderFeed(posts) {
         </div>
       </div>
       ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
-      ${p.video ? `<video src="${p.video}" controls class="post-video"></video>` : ''}
+      ${p.video ? (p.live
+        ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+        : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
       <p class="post-text">${escapeHtml(p.text)}</p>
       <div class="post-time">${formatTime(p.createdAt)}</div>
       <div class="post-actions">
@@ -582,7 +584,9 @@ function renderPostDetail(id) {
       </div>
     </div>
     ${post.image ? `<img src="${post.image}" class="detail-img">` : ''}
-    ${post.video ? `<video src="${post.video}" controls class="detail-video"></video>` : ''}
+    ${post.video ? (post.live
+      ? `<div class="live-wrap"><video src="${post.video}" class="detail-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+      : `<video src="${post.video}" controls class="detail-video"></video>`) : ''}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     <div class="post-time">${formatTime(post.createdAt)}</div>
     <div class="post-actions" style="margin:12px 0;">
@@ -865,7 +869,9 @@ function renderUserPage(userId, user, posts) {
         ${posts.length ? posts.map(p => `
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
             ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
-            ${p.video ? `<video src="${p.video}" controls class="post-video"></video>` : ''}
+            ${p.video ? (p.live
+              ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+              : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
             <p class="post-text">${escapeHtml(p.text)}</p>
             <div class="post-time">${formatTime(p.createdAt)}</div>
           </div>
@@ -914,7 +920,7 @@ function addImage() {
   input.click();
 }
 
-function addVideo() {
+function addVideo(isLive = false) {
   const input = document.getElementById('video-input');
   input.onchange = async e => {
     const file = e.target.files[0];
@@ -929,9 +935,10 @@ function addVideo() {
       const base64 = ev.target.result.split(',')[1];
       pendingVideo = base64;
       pendingVideoName = file.name;
+      pendingLive = isLive;
       document.getElementById('video-preview').src = ev.target.result;
       document.getElementById('video-preview').style.display = 'block';
-      showToast('✅ 视频已添加');
+      showToast(isLive ? '✅ 实况已添加（发布后自动循环播放）' : '✅ 视频已添加');
     };
     reader.readAsDataURL(file);
   };
@@ -939,6 +946,7 @@ function addVideo() {
 }
 
 let pendingVideoName = '';
+let pendingLive = false;
 
 async function compressImage(file, maxDim, quality) {
   return new Promise((resolve) => {
@@ -988,6 +996,7 @@ async function publishPost() {
       text,
       image: imageUrl,
       video: videoUrl,
+      live: !!(videoUrl && pendingLive),
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
       likes: [],
@@ -1009,6 +1018,7 @@ async function publishPost() {
     pendingImage = null;
     pendingVideo = null;
     pendingVideoName = '';
+    pendingLive = false;
     document.getElementById('post-text').value = '';
     document.getElementById('img-preview').style.display = 'none';
     document.getElementById('video-preview').style.display = 'none';
@@ -1876,6 +1886,8 @@ function switchTab(tab) {
   document.getElementById('tab-' + tab).style.display = 'block';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
+  const manageBtn = document.getElementById('btn-manage');
+  if (manageBtn) manageBtn.style.display = (tab === 'feed' && !manageMode) ? 'inline-block' : 'none';
   if (tab === 'publish') loadFriendOptions();
   if (tab === 'friends') { loadFriendsPage(); loadNotifications(); }
   if (tab === 'settings') loadSettings();
