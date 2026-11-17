@@ -1465,12 +1465,13 @@ async function loadFriendsPage() {
   const myFriends = users.filter(u => u.id !== currentUser.id && isFriend(u.id, currentUser.id));
   const others = users.filter(u => u.id !== currentUser.id && !isFriend(u.id, currentUser.id));
 
-  let html = '<h3>👥 我的好友</h3>';
+  let html = '';
   if (myFriends.length) {
     html += myFriends.map(u => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.7);border-radius:10px;margin-bottom:8px;">
-        <span style="display:flex;align-items:center;">${getAvatarHtml(u.username, u.avatar, u.id)}${escapeHtml(u.username)}</span>
-        <button onclick="removeFriend('${u.id}')" class="btn-secondary" style="padding:4px 10px;">删除</button>
+      <div class="friend-row">
+        ${getAvatarHtml(u.username, u.avatar, u.id)}
+        <span class="friend-name">${escapeHtml(u.username)}</span>
+        <button onclick="removeFriend('${u.id}')" class="friend-del">删除</button>
       </div>
     `).join('');
   } else {
@@ -1480,9 +1481,10 @@ async function loadFriendsPage() {
   html += '<h3 style="margin-top:24px;">🔍 其他用户</h3>';
   if (others.length) {
     html += others.map(u => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.7);border-radius:10px;margin-bottom:8px;">
-        <span style="display:flex;align-items:center;">${getAvatarHtml(u.username, u.avatar, u.id)}${escapeHtml(u.username)}</span>
-        <button onclick="addFriend('${u.id}')" class="btn-primary" style="padding:4px 10px;">+ 加好友</button>
+      <div class="friend-row">
+        ${getAvatarHtml(u.username, u.avatar, u.id)}
+        <span class="friend-name">${escapeHtml(u.username)}</span>
+        <button onclick="addFriend('${u.id}')" class="friend-add">+ 加</button>
       </div>
     `).join('');
   } else {
@@ -1563,7 +1565,7 @@ async function loadSettings() {
   const available = valid.filter(i => !i.used_by);
   document.getElementById('invite-list').innerHTML = available.map(i => {
     const remain = inviteRemaining(i);
-    return `<div style="padding:10px;background:rgba(255,255,255,0.55);border-radius:10px;margin-bottom:8px;">
+    return `<div style="padding:10px;background:rgba(255,255,255,0.32);border:1px solid rgba(255,255,255,0.45);border-radius:10px;margin-bottom:8px;">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <code style="font-size:16px;color:#6c5ce7;">${i.code}</code>
         <button onclick="copyInvite('${i.code}')" class="btn-secondary" style="padding:4px 10px;width:auto;">复制</button>

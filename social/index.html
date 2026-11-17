@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -96,7 +96,7 @@
           </select>
         </div>
 
-        <div id="friend-options" style="display:none;background:rgba(255,255,255,0.55);padding:12px;border-radius:10px;margin:10px 0;"></div>
+        <div id="friend-options" style="display:none;background:rgba(255,255,255,0.32);border:1px solid rgba(255,255,255,0.45);padding:12px;border-radius:10px;margin:10px 0;"></div>
 
         <div class="action-row">
           <button class="action-btn" onclick="addImage()">📷 图片</button>
@@ -154,7 +154,7 @@
       <div class="publish-card" style="margin-top:12px;">
         <h3>🔗 应用地址</h3>
         <p style="color:#888;font-size:13px;">把这个网址发给朋友，他就能打开「梦里有zhi」。</p>
-        <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.55);padding:8px 10px;border-radius:10px;margin:8px 0;">
+        <div style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.32);border:1px solid rgba(255,255,255,0.45);padding:8px 10px;border-radius:10px;margin:8px 0;">
           <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:#6c5ce7;">https://1024z-del.github.io/mengli-youzhi/social/</span>
           <button onclick="copyAppUrl()" title="复制网页地址" style="flex-shrink:0;border:none;background:rgba(255,255,255,0.75);color:#6c5ce7;width:22px;height:22px;border-radius:6px;font-size:11px;line-height:1;cursor:pointer;">📋</button>
         </div>
@@ -308,7 +308,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 64;
+const CURRENT_V = 65;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -336,6 +336,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=64"></script>
+<script src="app.js?v=65"></script>
 </body>
 </html>
