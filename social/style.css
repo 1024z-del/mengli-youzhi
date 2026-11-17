@@ -345,12 +345,11 @@ textarea:focus { border-color: #6c5ce7; }
   position: relative;
   margin: 10px 0;
 }
-/* 动态里的视频封面：点击全屏观看 */
+/* 动态里的视频：直接在列表里播放 */
 .media-thumb {
   position: relative;
   margin: 10px 0;
   line-height: 0;
-  cursor: pointer;
 }
 .media-thumb .post-video,
 .media-thumb .post-img {
@@ -358,23 +357,9 @@ textarea:focus { border-color: #6c5ce7; }
   display: block;
   min-height: 200px;
 }
-.media-play {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: rgba(20, 10, 40, 0.5);
-  color: #fff;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-left: 4px;
-  pointer-events: none;
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+.media-thumb .post-video {
+  object-fit: contain;
+  background: #0b0718;
 }
 .media-thumb .live-badge {
   top: 8px;

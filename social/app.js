@@ -130,12 +130,11 @@ function mediaHtml(m, cls) {
     return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy"${fallback}>`;
   }
 
-  // 动态列表：只显示封面 + 播放按钮，点击全屏观看，避免点播放时误触打开详情
+  // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
   if (cls === 'post') {
     const bgStyle = poster ? ` style="background:#0b0718 url('${poster}') center/cover no-repeat;"` : '';
-    return `<div class="media-thumb" onclick="event.stopPropagation();openMediaViewer('${raw}','video')">
-      <video class="post-video" src="${src}#t=0.1"${posterAttr} preload="none" muted playsinline webkit-playsinline${bgStyle}${fallback}></video>
-      <span class="media-play">▶</span>
+    return `<div class="media-thumb" onclick="event.stopPropagation()">
+      <video class="post-video" src="${src}#t=0.1"${posterAttr} controls playsinline webkit-playsinline preload="metadata"${bgStyle}${fallback}></video>
       ${m.live ? '<span class="live-badge">实况</span>' : ''}
     </div>`;
   }
@@ -1010,59 +1009,6 @@ function previewPendingMedia(i) {
     content.innerHTML = `<video src="data:${m.mime};base64,${m.data}" controls autoplay playsinline webkit-playsinline style="max-width:100%;max-height:90vh;border-radius:8px;background:#000;"></video>`;
   }
   viewer.style.display = 'flex';
-}
-
-function openMediaViewer(rawUrl, type) {
-  const viewer = document.getElementById('media-viewer');
-  const content = document.getElementById('media-viewer-content');
-  if (!viewer || !content) return;
-  const rel = mediaRelPath(rawUrl);
-  const list = rel
-    ? [MEDIA_PAGES_PREFIX + rel, MEDIA_CDN_PREFIX + rel, rawUrl]
-    : [rawUrl];
-  if (type === 'image') {
-    content.innerHTML = `<img src="${list[0]}" style="max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain;">`;
-    viewer.style.display = 'flex';
-    return;
-  }
-  content.innerHTML = `<div style="color:#fff;font-size:13px;text-align:center;">视频加载中...</div>`;
-  viewer.style.display = 'flex';
-  const v = document.createElement('video');
-  v.controls = true;
-  v.autoplay = true;
-  v.playsInline = true;
-  v.setAttribute('webkit-playsinline', '');
-  v.preload = 'auto';
-  v.style.cssText = 'max-width:100%;max-height:92vh;border-radius:8px;background:#000;';
-  let idx = 0;
-  let timer = 0;
-  const tryNext = () => {
-    idx++;
-    if (idx < list.length) {
-      v.src = list[idx];
-      v.load();
-      v.play().catch(() => {});
-      arm();
-    } else {
-      clearTimeout(timer);
-      content.innerHTML = '<div style="color:#fff;font-size:14px;text-align:center;line-height:1.8;">视频加载失败<br><span style="font-size:12px;opacity:.7;">请检查网络后重试</span></div>';
-    }
-  };
-  // 网络卡住时不会触发 error，超过 15 秒自动换下一个地址
-  const arm = () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { if (v.readyState < 2) tryNext(); }, 15000);
-  };
-  v.onloadeddata = () => {
-    clearTimeout(timer);
-    const tip = content.querySelector('div');
-    if (tip) tip.remove();
-  };
-  v.onerror = () => tryNext();
-  v.src = list[0];
-  content.appendChild(v);
-  arm();
-  v.play().catch(() => {});
 }
 
 function closeMediaViewer() {
