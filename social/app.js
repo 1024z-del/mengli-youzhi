@@ -132,6 +132,17 @@ function imgRetry(img) {
   const delay = i === 3 ? 3000 : 0;
   setTimeout(() => { img.src = list[i]; }, delay);
 }
+// 缩略图已在显示，原图预加载完成后再无感替换（避免闪烁）
+function imgUpgrade(img) {
+  const full = img.dataset.full;
+  if (!full || img.dataset.up || img.src === full) return;
+  img.dataset.up = '1';
+  const pre = new Image();
+  pre.onload = () => {
+    if (img.dataset.up === '1') img.src = full;
+  };
+  pre.src = full;
+}
 function getPostMedia(p) {
   if (Array.isArray(p.media) && p.media.length) return p.media;
   const list = [];
@@ -143,10 +154,10 @@ function getPostMedia(p) {
 const galleryStore = {};
 function mediaListHtml(p, cls) {
   const list = getPostMedia(p);
-  const allImgs = list.length > 1 && list.every(m => m.type === 'image');
+  const allImgs = list.length >= 1 && list.every(m => m.type === 'image');
   if (cls !== 'post' || !allImgs) return list.map(m => mediaHtml(m, cls)).join('');
   galleryStore[p.id] = list.map(m => m.url);
-  const cols = list.length === 4 ? 2 : 3;
+  const cols = list.length === 1 ? 1 : (list.length === 4 ? 2 : 3);
   const cells = list.map((m, i) => `<div class="img-cell" onclick="event.stopPropagation();openImageGallery('${p.id}',${i})">
       <img src="${mediaPagesUrl(m.thumb || m.url)}" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || m.url)}>
     </div>`).join('');
@@ -181,10 +192,12 @@ function mediaHtml(m, cls) {
   const poster = m.poster ? mediaPagesUrl(m.poster) : '';
   const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
-    const clsName = cls === 'post' ? 'post-img' : 'detail-img';
-    const t = m.thumb ? mediaPagesUrl(m.thumb) : '';
-    const bg = t ? ` style="background:url('${t}') center/cover no-repeat;"` : '';
-    return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy" decoding="async"${bg}${imgFallbackAttr(raw)}>`;
+    if (cls !== 'post') {
+      return `<img src="${mediaPagesUrl(raw)}" class="detail-img" loading="lazy" decoding="async"${imgFallbackAttr(raw)}>`;
+    }
+    // 动态列表：先显示缩略图（秒开），原图加载好后再替换；不重复请求、不闪烁
+    const thumb = m.thumb ? mediaPagesUrl(m.thumb) : mediaPagesUrl(raw);
+    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || raw)} data-full="${mediaPagesUrl(raw)}" onload="imgUpgrade(this)">`;
   }
 
   // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
@@ -537,7 +550,9 @@ async function loadPosts() {
   renderFeed(visible);
 }
 
+let lastFeedSig = '';
 function renderFeed(posts) {
+  lastFeedSig = JSON.stringify(posts);
   const container = document.getElementById('feed');
 
   if (manageMode) {
@@ -579,7 +594,7 @@ function renderFeed(posts) {
       </div>
       ${mediaListHtml(p, 'post')}
       <p class="post-text">${escapeHtml(p.text)}</p>
-      ${p.location && p.location.name ? `<div class="post-loc">📍 ${escapeHtml(p.location.name)}</div>` : ''}
+      ${p.location ? `<div class="post-loc">📍 ${escapeHtml(locText(p.location))}</div>` : ''}
       <div class="post-time">${formatTime(p.createdAt)}</div>
       <div class="post-actions">
         <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="event.stopPropagation();toggleLike('${p.id}')">
@@ -723,7 +738,7 @@ function renderPostDetail(id) {
     </div>
     ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
     <p class="detail-text">${escapeHtml(post.text)}</p>
-    ${post.location && post.location.name ? `<div class="post-loc">📍 ${escapeHtml(post.location.name)}</div>` : ''}
+    ${post.location ? `<div class="post-loc">📍 ${escapeHtml(locText(post.location))}</div>` : ''}
     <div class="post-time">${formatTime(post.createdAt)}</div>
     <div class="post-actions" style="margin:12px 0;">
       <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="toggleLike('${post.id}')">
@@ -1424,7 +1439,7 @@ function initLocMap(wgsLat, wgsLng, keepName) {
 }
 async function onMapPick(gcjLat, gcjLng) {
   const w = gcj2wgs(gcjLat, gcjLng);
-  locMapSelected = { name: '', lat: w.lat, lng: w.lng };
+  locMapSelected = { name: '', addr: '', lat: w.lat, lng: w.lng };
   const label = document.getElementById('loc-picked');
   label.textContent = '正在获取地址...';
   const coords = `${w.lat.toFixed(5)}, ${w.lng.toFixed(5)}`;
@@ -1436,8 +1451,9 @@ async function onMapPick(gcjLat, gcjLng) {
     const f = (j.features || [])[0];
     if (f) {
       const loc = photonToLoc(f);
-      locMapSelected.name = loc.name || loc.addr || coords;
-      label.textContent = '📍 ' + locMapSelected.name + (loc.addr && loc.addr !== loc.name ? ' · ' + loc.addr : '');
+      locMapSelected.name = loc.name || coords;
+      locMapSelected.addr = loc.addr || '';
+      label.textContent = '📍 ' + locText(locMapSelected);
     } else {
       locMapSelected.name = coords;
       label.textContent = '📍 ' + coords;
@@ -1450,9 +1466,14 @@ async function onMapPick(gcjLat, gcjLng) {
 }
 function confirmMapLocation() {
   if (!locMapSelected || !locMapSelected.name) { alert('请先在地图上选择位置'); return; }
-  pickedLocation = { name: locMapSelected.name, lat: locMapSelected.lat, lng: locMapSelected.lng };
+  pickedLocation = {
+    name: locMapSelected.name,
+    addr: locMapSelected.addr || '',
+    lat: +locMapSelected.lat.toFixed(3),
+    lng: +locMapSelected.lng.toFixed(3)
+  };
   const btn = document.getElementById('btn-location');
-  btn.textContent = '📍 ' + pickedLocation.name;
+  btn.textContent = '📍 ' + locText(pickedLocation);
   btn.style.color = '#4b3fa8';
   closeLocationModal();
 }
@@ -1482,8 +1503,17 @@ function photonToLoc(f) {
   const p = (f && f.properties) || {};
   const coords = (f && f.geometry && f.geometry.coordinates) || [];
   const name = p.name || p.street || p.locality || p.city || p.district || p.state || '未知地点';
-  const addr = [p.country, p.state, p.city, p.county, p.district, p.locality, p.street, p.housenumber].filter(Boolean).join(' ');
-  return { name, addr: addr || name, lat: coords[1], lon: coords[0] };
+  const addr = [p.state, p.city, p.county, p.district, p.locality, p.street, p.housenumber]
+    .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(' ');
+  return { name, addr: addr || '', lat: coords[1], lon: coords[0] };
+}
+// 展示用：省 · 市 · 区 · 地点
+function locText(loc) {
+  if (!loc) return '';
+  const parts = [];
+  if (loc.addr) parts.push(loc.addr);
+  if (loc.name && (!loc.addr || loc.addr.indexOf(loc.name) === -1)) parts.push(loc.name);
+  return parts.join(' · ') || loc.name || '';
 }
 async function useCurrentLocation() {
   if (!navigator.geolocation) { alert('当前浏览器不支持定位'); return; }
@@ -1526,12 +1556,12 @@ function pickLocation(i) {
     const g = wgs2gcj(lat, lng);
     locMap.setView([g.lat, g.lng], 17);
     locMarker.setLatLng([g.lat, g.lng]);
-    locMapSelected = { name: r.name, lat, lng };
-    document.getElementById('loc-picked').textContent = '📍 ' + r.name;
+    locMapSelected = { name: r.name, addr: r.addr || '', lat, lng };
+    document.getElementById('loc-picked').textContent = '📍 ' + locText(locMapSelected);
   }
-  pickedLocation = { name: r.name, lat, lng };
+  pickedLocation = { name: r.name, addr: r.addr || '', lat: +lat.toFixed(3), lng: +lng.toFixed(3) };
   const btn = document.getElementById('btn-location');
-  btn.textContent = '📍 ' + r.name;
+  btn.textContent = '📍 ' + locText(pickedLocation);
   btn.style.color = '#4b3fa8';
   closeLocationModal();
 }
@@ -1602,7 +1632,7 @@ async function publishPost() {
       video: (media.find(m => m.type === 'video') || {}).url || null,
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
-      location: pickedLocation ? { name: pickedLocation.name, lat: pickedLocation.lat, lng: pickedLocation.lng } : null,
+      location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '', lat: pickedLocation.lat, lng: pickedLocation.lng } : null,
       likes: [],
       comments: [],
       createdAt: new Date().toISOString()
@@ -2462,7 +2492,12 @@ function startPolling() {
       if (feedTab && feedTab.style.display !== 'none') {
         const visible = posts.filter(p => canViewPost(p, currentUser.id));
         visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        renderFeed(visible);
+        // 内容没变就不重绘，避免图片被反复重新加载导致闪烁
+        const sig = JSON.stringify(visible);
+        if (sig !== lastFeedSig) {
+          lastFeedSig = sig;
+          renderFeed(visible);
+        }
       }
     } catch (e) { /* 静默 */ }
   }, 15000);
