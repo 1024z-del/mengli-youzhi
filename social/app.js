@@ -859,7 +859,7 @@ function renderUserPage(userId, user, posts) {
     <div style="padding:0 16px 16px;position:relative;">
       <div style="margin-top:-36px;">${avatarHtml}</div>
       <div style="font-size:18px;font-weight:700;color:#333;margin-top:8px;">${escapeHtml(name)}</div>
-      <div style="font-size:13px;color:#666;margin-top:6px;white-space:pre-wrap;line-height:1.6;">${bio ? escapeHtml(bio) : (isMe ? '还没有自我介绍，点右上角「编辑」填写吧～' : '这个人很神秘，什么都没写～')}</div>
+      <div style="font-size:13px;color:#666;margin-top:6px;white-space:pre-wrap;line-height:1.6;">${bio ? escapeHtml(bio) : (isMe ? '还没有自我介绍，点右上角「编辑」填写吧～' : 'Ta好像什么都不想说')}</div>
       <div style="font-size:13px;color:#999;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">TA 的动态 (${posts.length})</div>
       <div style="margin-top:10px;">
         ${posts.length ? posts.map(p => `
