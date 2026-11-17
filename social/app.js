@@ -1632,7 +1632,8 @@ async function publishPost() {
       video: (media.find(m => m.type === 'video') || {}).url || null,
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
-      location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '', lat: pickedLocation.lat, lng: pickedLocation.lng } : null,
+      // 只保存文字地址，绝不写入经纬度（避免被精确定位）
+      location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
       likes: [],
       comments: [],
       createdAt: new Date().toISOString()
