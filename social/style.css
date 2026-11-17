@@ -19,10 +19,29 @@ body::before {
     radial-gradient(closest-side at 10% 70%, rgba(165, 130, 255, 0.62), transparent),
     radial-gradient(closest-side at 60% 60%, rgba(120, 235, 240, 0.22), transparent),
     radial-gradient(closest-side at 92% 82%, rgba(255, 170, 225, 0.45), transparent),
-    linear-gradient(160deg, #6a58e6 0%, #7c58c6 34%, #586ae0 64%, #9a54b8 100%);
+    linear-gradient(160deg, #6f5ae8 0%, #8a5ad2 32%, #5a74e8 62%, #a856c4 100%);
   background-repeat: no-repeat;
   background-size: 88% 88%, 55% 55%, 70% 70%, 95% 95%, 80% 80%, 85% 85%, 100% 100%;
   animation: auroraDrift 26s ease-in-out infinite alternate;
+}
+
+/* 梦幻背景：缓慢旋转的星云 */
+html::before {
+  content: '';
+  position: fixed;
+  inset: -35%;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse 42% 34% at 40% 42%, rgba(255, 170, 235, 0.4), transparent 70%),
+    radial-gradient(ellipse 38% 30% at 66% 62%, rgba(120, 195, 255, 0.38), transparent 70%),
+    radial-gradient(ellipse 34% 28% at 55% 26%, rgba(200, 160, 255, 0.34), transparent 70%),
+    radial-gradient(ellipse 30% 24% at 30% 70%, rgba(150, 255, 230, 0.18), transparent 70%);
+  animation: nebulaSpin 90s linear infinite;
+  pointer-events: none;
+}
+@keyframes nebulaSpin {
+  from { transform: rotate(0deg) scale(1.05); }
+  to { transform: rotate(360deg) scale(1.05); }
 }
 
 /* 梦幻背景：闪烁的星点 */
@@ -36,8 +55,11 @@ body::after {
     radial-gradient(1.6px 1.6px at 30px 40px, rgba(255, 255, 255, 0.95), transparent),
     radial-gradient(1.2px 1.2px at 130px 170px, rgba(255, 255, 255, 0.7), transparent),
     radial-gradient(1.8px 1.8px at 210px 80px, rgba(255, 246, 255, 0.9), transparent),
-    radial-gradient(1px 1px at 70px 230px, rgba(255, 255, 255, 0.6), transparent);
-  background-size: 260px 260px, 340px 340px, 420px 420px, 200px 200px;
+    radial-gradient(1px 1px at 70px 230px, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(2.2px 2.2px at 180px 260px, rgba(255, 230, 255, 0.85), transparent),
+    radial-gradient(1.4px 1.4px at 260px 150px, rgba(210, 235, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 330px 90px, rgba(255, 255, 255, 0.55), transparent);
+  background-size: 260px 260px, 340px 340px, 420px 420px, 200px 200px, 480px 480px, 300px 300px, 380px 380px;
   animation: twinkle 7s ease-in-out infinite alternate;
 }
 
@@ -157,7 +179,21 @@ input:focus { border-color: #6c5ce7; }
   color: #fff;
   font-size: 18px;
   letter-spacing: 0.5px;
-  text-shadow: 0 2px 16px rgba(255, 170, 235, 0.75), 0 1px 3px rgba(60, 30, 120, 0.45);
+}
+/* 梦幻渐变标题 */
+.dream-title {
+  background: linear-gradient(90deg, #ffe9b8 0%, #ffb8e8 22%, #e0c2ff 45%, #a8e8ff 68%, #ffc7ee 88%, #ffe9b8 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  filter: drop-shadow(0 0 10px rgba(255, 190, 240, 0.7));
+  animation: titleShimmer 9s ease-in-out infinite alternate;
+}
+@keyframes titleShimmer {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
 }
 .top-manage-btn {
   position: absolute;
@@ -184,7 +220,7 @@ input:focus { border-color: #6c5ce7; }
 
 /* 发布卡片 */
 .publish-card {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.7);
   border-radius: 16px;
   padding: 16px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
@@ -257,7 +293,7 @@ textarea:focus { border-color: #6c5ce7; }
 
 /* 动态列表 */
 .post-card {
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.7);
   border-radius: 16px;
   padding: 16px;
   margin-bottom: 10px;

@@ -439,7 +439,9 @@ function renderFeed(posts) {
       </div>
       ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
       ${p.video ? (p.live
-        ? `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+        ? (p.liveSound === false
+          ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+          : `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`)
         : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
       <p class="post-text">${escapeHtml(p.text)}</p>
       <div class="post-time">${formatTime(p.createdAt)}</div>
@@ -585,7 +587,9 @@ function renderPostDetail(id) {
     </div>
     ${post.image ? `<img src="${post.image}" class="detail-img">` : ''}
     ${post.video ? (post.live
-      ? `<div class="live-wrap"><video src="${post.video}" class="detail-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+      ? (post.liveSound === false
+        ? `<div class="live-wrap"><video src="${post.video}" class="detail-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+        : `<div class="live-wrap"><video src="${post.video}" class="detail-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`)
       : `<video src="${post.video}" controls class="detail-video"></video>`) : ''}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     <div class="post-time">${formatTime(post.createdAt)}</div>
@@ -870,7 +874,9 @@ function renderUserPage(userId, user, posts) {
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
             ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
             ${p.video ? (p.live
-              ? `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+              ? (p.liveSound === false
+                ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
+                : `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`)
               : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
             <p class="post-text">${escapeHtml(p.text)}</p>
             <div class="post-time">${formatTime(p.createdAt)}</div>
@@ -936,9 +942,16 @@ function addVideo(isLive = false) {
       pendingVideo = base64;
       pendingVideoName = file.name;
       pendingLive = isLive;
+      if (isLive) {
+        pendingLiveSound = confirm('这段实况要带声音播放吗？\n\n点「确定」= 带声音（点播放键，播放原声）\n点「取消」= 静音循环播放');
+      } else {
+        pendingLiveSound = true;
+      }
       document.getElementById('video-preview').src = ev.target.result;
       document.getElementById('video-preview').style.display = 'block';
-      showToast(isLive ? '✅ 实况已添加（发布后自动循环播放）' : '✅ 视频已添加');
+      showToast(isLive
+        ? (pendingLiveSound ? '✅ 实况已添加（带声音）' : '✅ 实况已添加（静音循环）')
+        : '✅ 视频已添加');
     };
     reader.readAsDataURL(file);
   };
@@ -947,6 +960,7 @@ function addVideo(isLive = false) {
 
 let pendingVideoName = '';
 let pendingLive = false;
+let pendingLiveSound = true;
 
 async function compressImage(file, maxDim, quality) {
   return new Promise((resolve) => {
@@ -997,6 +1011,7 @@ async function publishPost() {
       image: imageUrl,
       video: videoUrl,
       live: !!(videoUrl && pendingLive),
+      liveSound: !!(videoUrl && pendingLive && pendingLiveSound),
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
       likes: [],
@@ -1019,6 +1034,7 @@ async function publishPost() {
     pendingVideo = null;
     pendingVideoName = '';
     pendingLive = false;
+    pendingLiveSound = true;
     document.getElementById('post-text').value = '';
     document.getElementById('img-preview').style.display = 'none';
     document.getElementById('video-preview').style.display = 'none';
