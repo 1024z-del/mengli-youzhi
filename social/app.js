@@ -111,14 +111,26 @@ function mediaHtml(m, cls) {
   const raw = m.url;
   const src = mediaRenderUrl(raw);
   const fallback = mediaFallbackAttr(raw);
-  const clsName = cls === 'post' ? 'post-img' : 'detail-img';
-  const vidCls = cls === 'post' ? 'post-video' : 'detail-video';
+  const poster = m.poster ? mediaRenderUrl(m.poster) : '';
+  const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
+    const clsName = cls === 'post' ? 'post-img' : 'detail-img';
     return `<img src="${src}" class="${clsName}" loading="lazy"${fallback}>`;
   }
-  // #t=0.1 让 iOS 直接显示首帧作为封面
+
+  // 动态列表：只显示封面 + 播放按钮，点击全屏观看，避免点播放时误触打开详情
+  if (cls === 'post') {
+    const bgStyle = poster ? ` style="background:#0b0718 url('${poster}') center/cover no-repeat;"` : '';
+    return `<div class="media-thumb" onclick="event.stopPropagation();openMediaViewer('${src}','video')">
+      <video class="post-video" src="${src}#t=0.1"${posterAttr} preload="none" muted playsinline webkit-playsinline${bgStyle}${fallback}></video>
+      <span class="media-play">▶</span>
+      ${m.live ? '<span class="live-badge">实况</span>' : ''}
+    </div>`;
+  }
+
+  // 详情页：保留原生播放控件
+  const vidCls = 'detail-video';
   const vsrc = `${src}#t=0.1`;
-  const posterAttr = m.poster ? ` poster="${mediaRenderUrl(m.poster)}"` : '';
   if (m.live) {
     return m.sound === false
       ? `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}"${posterAttr} autoplay muted loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`
@@ -412,36 +424,38 @@ async function deleteSelected() {
   }
   if (!confirm(`确定删除选中的 ${selectedPostIds.size} 篇日记吗？\n（删除后会在云端回收站保留 30 天）`)) return;
 
-  const toDelete = allPostsCache.filter(p => selectedPostIds.has(p.id));
+  const ids = new Set(selectedPostIds);
+  const toDelete = allPostsCache.filter(p => ids.has(p.id));
 
-  // 乐观更新本地缓存
-  allPostsCache = allPostsCache.filter(p => !selectedPostIds.has(p.id));
-  loadPosts();
-
-  // 移到回收站（单独写入 trash.json）
-  try {
-    const { content: trash, sha: trashSha } = await ghGetFile('data/trash.json');
-    const trashList = trash || [];
-    const now = new Date().toISOString();
-    toDelete.forEach(p => {
-      trashList.push({ ...p, deletedAt: now });
-    });
-    // 清理超过 30 天的
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-    const cleaned = trashList.filter(t => new Date(t.deletedAt).getTime() > cutoff);
-    await ghPutFile('data/trash.json', cleaned, trashSha);
-  } catch (e) {
-    console.error('回收站写入失败', e);
-  }
-
-  // 通过队列从 posts.json 删除
-  await enqueuePostsWrite((serverPosts) => {
-    return serverPosts.filter(p => !selectedPostIds.has(p.id));
-  });
-
+  // 立即更新界面，不等待网络
+  allPostsCache = allPostsCache.filter(p => !ids.has(p.id));
   selectedPostIds.clear();
-  showToast('🗑️ 已移到回收站（保留 30 天）');
-  exitManageMode();
+  manageMode = false;
+  document.getElementById('feed-manage-bar').style.display = 'none';
+  document.getElementById('btn-manage').style.display = 'inline-block';
+  renderFeed(allPostsCache);
+  showToast('🗑️ 已删除（正在同步云端）');
+
+  // 后台写入云端，用户无需等待
+  (async () => {
+    try {
+      const { content: trash, sha: trashSha } = await ghGetFile('data/trash.json');
+      const trashList = trash || [];
+      const now = new Date().toISOString();
+      toDelete.forEach(p => {
+        trashList.push({ ...p, deletedAt: now });
+      });
+      // 清理超过 30 天的
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const cleaned = trashList.filter(t => new Date(t.deletedAt).getTime() > cutoff);
+      await ghPutFile('data/trash.json', cleaned, trashSha);
+    } catch (e) {
+      console.error('回收站写入失败', e);
+    }
+    await enqueuePostsWrite((serverPosts) => {
+      return serverPosts.filter(p => !ids.has(p.id));
+    });
+  })();
 }
 
 async function loadPosts() {
@@ -986,6 +1000,20 @@ function previewPendingMedia(i) {
   viewer.style.display = 'flex';
 }
 
+function openMediaViewer(src, type) {
+  const viewer = document.getElementById('media-viewer');
+  const content = document.getElementById('media-viewer-content');
+  if (!viewer || !content) return;
+  if (type === 'image') {
+    content.innerHTML = `<img src="${src}" style="max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain;">`;
+  } else {
+    content.innerHTML = `<video src="${src}" controls autoplay playsinline webkit-playsinline preload="auto" style="max-width:100%;max-height:92vh;border-radius:8px;background:#000;"></video>`;
+  }
+  viewer.style.display = 'flex';
+  const v = content.querySelector('video');
+  if (v) v.play().catch(() => {});
+}
+
 function closeMediaViewer() {
   const viewer = document.getElementById('media-viewer');
   const content = document.getElementById('media-viewer-content');
@@ -1089,16 +1117,21 @@ function addVideo(isLive = false) {
         alert(`${file.name} 太大了，请小于 20MB`);
         continue;
       }
-      const thumb = await makeVideoThumb(file);
       const base64 = await fileToBase64(file);
-      pendingMedia.push({
+      const item = {
         kind: 'video',
         data: base64,
-        thumb,
+        thumb: '',
         name: file.name,
         mime: file.type || 'video/mp4',
         live: isLive,
         sound: true
+      };
+      pendingMedia.push(item);
+      renderPendingMedia();
+      // 封面子图后台生成，不耽误选中和上传
+      makeVideoThumb(file).then(t => {
+        if (t) { item.thumb = t; renderPendingMedia(); }
       });
     }
     input.value = '';
@@ -1157,25 +1190,25 @@ async function publishPost() {
     let done = 0;
     showUploadProgress(total ? `上传中 0/${total}...` : '发布中...');
 
-    // 逐个上传，避免同时提交互相冲突；大视频可能较慢
-    const uploaded = [];
-    for (let i = 0; i < pendingMedia.length; i++) {
-      const m = pendingMedia[i];
-      const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
-      showUploadProgress(`上传中 ${done}/${total}：${label}${m.kind === 'video' ? '（较大请稍等）' : ''}...`);
-      const url = await ghUploadMedia(m.name, m.data);
-      let poster = null;
-      if (m.kind === 'video' && m.thumb) {
-        try {
-          poster = await ghUploadMedia('thumb.jpg', m.thumb);
-        } catch (e) {
-          console.warn('封面图上传失败', e);
-        }
+    // 2 个并发上传（兼顾速度与 GitHub 提交冲突），封面图与视频同时上传
+    const uploaded = new Array(total);
+    let nextIndex = 0;
+    const uploadWorker = async () => {
+      while (nextIndex < total) {
+        const i = nextIndex++;
+        const m = pendingMedia[i];
+        const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
+        showUploadProgress(`上传中 ${done}/${total}：${label}${m.kind === 'video' ? '（较大请稍等）' : ''}...`);
+        const posterTask = (m.kind === 'video' && m.thumb)
+          ? ghUploadMedia('thumb.jpg', m.thumb).catch(e => { console.warn('封面图上传失败', e); return null; })
+          : Promise.resolve(null);
+        const [url, poster] = await Promise.all([ghUploadMedia(m.name, m.data), posterTask]);
+        uploaded[i] = { url, poster };
+        done++;
+        showUploadProgress(`上传中 ${done}/${total}...`);
       }
-      uploaded.push({ url, poster });
-      done++;
-      showUploadProgress(`上传中 ${done}/${total}...`);
-    }
+    };
+    await Promise.all([uploadWorker(), uploadWorker()]);
 
     const media = uploaded.map((u, i) => {
       const m = pendingMedia[i];
