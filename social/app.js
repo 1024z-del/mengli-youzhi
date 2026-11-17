@@ -96,11 +96,11 @@ const MEDIA_CDN_PREFIX = `https://cdn.jsdelivr.net/gh/${GH.owner}/${GH.repo}@${G
 function mediaRelPath(u) {
   return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? u.slice(MEDIA_RAW_PREFIX.length) : null;
 }
+// 国内网络下 Pages 最稳（App 本身就是从 Pages 加载的），CDN 作为备用
 function mediaRenderUrl(u) {
   const rel = mediaRelPath(u);
-  return rel ? MEDIA_CDN_PREFIX + rel : u;
+  return rel ? MEDIA_PAGES_PREFIX + rel : u;
 }
-// 封面走 Pages（体积小、App 本身也是从 Pages 加载，一定能打开）
 function mediaPagesUrl(u) {
   const rel = mediaRelPath(u);
   return rel ? MEDIA_PAGES_PREFIX + rel : u;
@@ -108,9 +108,9 @@ function mediaPagesUrl(u) {
 function mediaFallbackAttr(rawUrl) {
   const rel = mediaRelPath(rawUrl);
   if (!rel) return '';
-  const pages = MEDIA_PAGES_PREFIX + rel;
-  // 依次回退：CDN → Pages → raw
-  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${pages}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${rawUrl}';}"`;
+  const cdn = MEDIA_CDN_PREFIX + rel;
+  // 依次回退：Pages → CDN → raw
+  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${cdn}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${rawUrl}';}"`;
 }
 function getPostMedia(p) {
   if (Array.isArray(p.media) && p.media.length) return p.media;
@@ -1018,7 +1018,7 @@ function openMediaViewer(rawUrl, type) {
   if (!viewer || !content) return;
   const rel = mediaRelPath(rawUrl);
   const list = rel
-    ? [MEDIA_CDN_PREFIX + rel, MEDIA_PAGES_PREFIX + rel, rawUrl]
+    ? [MEDIA_PAGES_PREFIX + rel, MEDIA_CDN_PREFIX + rel, rawUrl]
     : [rawUrl];
   if (type === 'image') {
     content.innerHTML = `<img src="${list[0]}" style="max-width:100%;max-height:92vh;border-radius:8px;object-fit:contain;">`;
@@ -1035,18 +1035,33 @@ function openMediaViewer(rawUrl, type) {
   v.preload = 'auto';
   v.style.cssText = 'max-width:100%;max-height:92vh;border-radius:8px;background:#000;';
   let idx = 0;
-  v.onloadeddata = () => { const tip = content.querySelector('div'); if (tip) tip.remove(); };
-  v.onerror = () => {
+  let timer = 0;
+  const tryNext = () => {
     idx++;
     if (idx < list.length) {
       v.src = list[idx];
       v.load();
+      v.play().catch(() => {});
+      arm();
     } else {
+      clearTimeout(timer);
       content.innerHTML = '<div style="color:#fff;font-size:14px;text-align:center;line-height:1.8;">视频加载失败<br><span style="font-size:12px;opacity:.7;">请检查网络后重试</span></div>';
     }
   };
+  // 网络卡住时不会触发 error，超过 15 秒自动换下一个地址
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (v.readyState < 2) tryNext(); }, 15000);
+  };
+  v.onloadeddata = () => {
+    clearTimeout(timer);
+    const tip = content.querySelector('div');
+    if (tip) tip.remove();
+  };
+  v.onerror = () => tryNext();
   v.src = list[0];
   content.appendChild(v);
+  arm();
   v.play().catch(() => {});
 }
 
@@ -1152,6 +1167,8 @@ async function transcodeVideo(file) {
     try { if (MediaRecorder.isTypeSupported(t)) { mime = t; break; } } catch (e) {}
   }
   if (!mime) return null;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
 
   const srcUrl = URL.createObjectURL(file);
   const v = document.createElement('video');
@@ -1159,9 +1176,25 @@ async function transcodeVideo(file) {
   v.playsInline = true;
   v.setAttribute('webkit-playsinline', '');
   v.preload = 'auto';
-  v.style.cssText = 'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+  // 元素必须留在可视区域内 iOS 才会真正解码画面，所以用近乎透明的 960px 图层
+  v.style.cssText = 'position:fixed;left:0;top:0;width:960px;height:720px;opacity:0.01;pointer-events:none;z-index:1;';
   document.body.appendChild(v);
-  let actx = null, rec = null, raf = 0;
+
+  let actx = null, rec = null, raf = 0, audioTrack = null;
+  try {
+    // 关键：必须在用户点击的同一时刻接好音频并开始播放，否则 iOS 会拦截有声播放
+    actx = new AC();
+    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    const srcNode = actx.createMediaElementSource(v);
+    const dest = actx.createMediaStreamDestination();
+    srcNode.connect(dest);
+    audioTrack = dest.stream.getAudioTracks()[0];
+  } catch (e) {
+    console.warn('音频轨道不可用，改为静音压缩', e);
+  }
+  const playP = v.play();
+  playP.catch(() => {});
+
   const cleanup = () => {
     try { cancelAnimationFrame(raf); } catch (e) {}
     try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (e) {}
@@ -1170,6 +1203,7 @@ async function transcodeVideo(file) {
     try { v.remove(); } catch (e) {}
     try { URL.revokeObjectURL(srcUrl); } catch (e) {}
   };
+
   try {
     await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('读取视频超时')), 15000);
@@ -1177,18 +1211,9 @@ async function transcodeVideo(file) {
       v.onerror = () => { clearTimeout(t); reject(new Error('视频无法读取')); };
       v.load();
     });
+    try { await playP; } catch (e) { console.warn('播放被拦截，改用原视频', e); return null; }
     const dur = v.duration || 0;
     if (!dur || dur > 60) return null;
-
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    actx = new AC();
-    if (actx.state === 'suspended') { try { await actx.resume(); } catch (e) {} }
-    const srcNode = actx.createMediaElementSource(v);
-    const dest = actx.createMediaStreamDestination();
-    srcNode.connect(dest);
-    const audioTrack = dest.stream.getAudioTracks()[0];
-    if (!audioTrack) return null;
 
     const w0 = v.videoWidth || 720, h0 = v.videoHeight || 1280;
     const scale = Math.min(1, 960 / Math.max(w0, h0));
@@ -1199,20 +1224,12 @@ async function transcodeVideo(file) {
     const ctx = canvas.getContext('2d');
 
     const stream = canvas.captureStream(30);
-    stream.addTrack(audioTrack);
+    if (audioTrack) stream.addTrack(audioTrack);
 
     rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1600000, audioBitsPerSecond: 96000 });
     const chunks = [];
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
     const stopped = new Promise(resolve => { rec.onstop = resolve; });
-
-    v.muted = false;
-    try {
-      await v.play();
-    } catch (e) {
-      console.warn('自动播放被拦截，改用原视频', e);
-      return null;
-    }
     rec.start(500);
     const draw = () => {
       try { ctx.drawImage(v, 0, 0, cw, ch); } catch (e) {}
