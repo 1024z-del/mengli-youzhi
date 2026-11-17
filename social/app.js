@@ -112,6 +112,26 @@ function mediaFallbackAttr(rawUrl) {
   // 依次回退：Pages → CDN → raw
   return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${cdn}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${rawUrl}';}"`;
 }
+
+// 图片兜底：Pages 刚部署时新文件会短暂 404，先用 raw 拿到，再换回 Pages / CDN
+function imgFallbackAttr(u) {
+  const rel = mediaRelPath(u);
+  if (!rel) return '';
+  const raw = MEDIA_RAW_PREFIX + rel;
+  const pages = MEDIA_PAGES_PREFIX + rel;
+  const cdn = MEDIA_CDN_PREFIX + rel;
+  return ` onerror="imgRetry(this)" data-fb='${JSON.stringify([raw, pages, cdn, pages])}'`;
+}
+
+function imgRetry(img) {
+  let list = [];
+  try { list = JSON.parse(img.dataset.fb || '[]'); } catch (e) { return; }
+  const i = +(img.dataset.fi || 0);
+  if (i >= list.length) return;
+  img.dataset.fi = i + 1;
+  const delay = i === 3 ? 3000 : 0;
+  setTimeout(() => { img.src = list[i]; }, delay);
+}
 function getPostMedia(p) {
   if (Array.isArray(p.media) && p.media.length) return p.media;
   const list = [];
@@ -128,7 +148,7 @@ function mediaListHtml(p, cls) {
   galleryStore[p.id] = list.map(m => m.url);
   const cols = list.length === 4 ? 2 : 3;
   const cells = list.map((m, i) => `<div class="img-cell" onclick="event.stopPropagation();openImageGallery('${p.id}',${i})">
-      <img src="${mediaPagesUrl(m.thumb || m.url)}" loading="lazy" decoding="async">
+      <img src="${mediaPagesUrl(m.thumb || m.url)}" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || m.url)}>
     </div>`).join('');
   return `<div class="img-grid cols-${cols}">${cells}</div>`;
 }
@@ -142,7 +162,7 @@ function openImageGallery(pid, start) {
   content.style.width = '100%';
   content.style.height = '92vh';
   content.innerHTML = `<div class="gal-track">${urls.map(u =>
-    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"></div>`
+    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"${imgFallbackAttr(u)}></div>`
   ).join('')}</div>`;
   viewer.style.display = 'flex';
   const track = content.querySelector('.gal-track');
@@ -164,7 +184,7 @@ function mediaHtml(m, cls) {
     const clsName = cls === 'post' ? 'post-img' : 'detail-img';
     const t = m.thumb ? mediaPagesUrl(m.thumb) : '';
     const bg = t ? ` style="background:url('${t}') center/cover no-repeat;"` : '';
-    return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy" decoding="async"${bg}${fallback}>`;
+    return `<img src="${mediaPagesUrl(raw)}" class="${clsName}" loading="lazy" decoding="async"${bg}${imgFallbackAttr(raw)}>`;
   }
 
   // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
