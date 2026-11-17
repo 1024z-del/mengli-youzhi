@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=11">
+  <link rel="stylesheet" href="style.css?v=12">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -71,8 +71,7 @@
       <div class="publish-card">
         <textarea id="post-text" rows="5" placeholder="今天发生了什么？写下来吧...✨"></textarea>
 
-        <img id="img-preview" style="display:none;max-width:100%;border-radius:12px;margin:10px 0;">
-        <video id="video-preview" style="display:none;max-width:100%;border-radius:12px;margin:10px 0;" controls></video>
+        <div id="media-preview" style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin:10px 0;"></div>
 
         <div class="sticker-bar">
           <span>🎀 贴纸：</span>
@@ -104,9 +103,13 @@
           <button class="action-btn" onclick="addVideo(false)">🎬 视频</button>
           <button class="action-btn" onclick="addVideo(true)">🫧 实况</button>
         </div>
-        <p style="font-size:12px;color:#999;margin-top:-4px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」选择那个视频，最后选带不带声音。</p>
-        <input type="file" id="img-input" accept="image/*" style="display:none;">
-        <input type="file" id="video-input" accept="video/*" style="display:none;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#666;margin:4px 0 6px;">
+          <input type="checkbox" id="live-sound-toggle">
+          实况带声音（不勾选则静音自动循环）
+        </label>
+        <p style="font-size:12px;color:#999;margin:0 0 8px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」。图片/视频都支持一次多选多个。</p>
+        <input type="file" id="img-input" accept="image/*" multiple style="display:none;">
+        <input type="file" id="video-input" accept="video/*" multiple style="display:none;">
 
         <button class="primary-btn publish-btn" onclick="publishPost()">✨ 发布日记</button>
       </div>
@@ -294,7 +297,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 45;
+const CURRENT_V = 46;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -322,6 +325,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=45"></script>
+<script src="app.js?v=46"></script>
 </body>
 </html>

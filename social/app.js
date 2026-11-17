@@ -57,7 +57,8 @@ async function ghPutFile(path, data, sha) {
 }
 
 async function ghUploadMedia(name, base64) {
-  const path = `media/${Date.now()}_${name}`;
+  const safeName = String(name || 'file').replace(/[^\w.\-]+/g, '_');
+  const path = `media/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
   const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}`;
   const body = {
     message: `upload media`,
@@ -67,6 +68,43 @@ async function ghUploadMedia(name, base64) {
   const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
   if (!r.ok) throw new Error(`上传失败 ${r.status}`);
   return `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/${path}`;
+}
+
+// ---- 媒体地址：优先用 Pages 域名（国内更稳更快），失败再回退 raw ----
+const MEDIA_RAW_PREFIX = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/`;
+const MEDIA_PAGES_PREFIX = `https://${GH.owner}.github.io/${GH.repo}/social/`;
+function mediaRenderUrl(u) {
+  return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? MEDIA_PAGES_PREFIX + u.slice(MEDIA_RAW_PREFIX.length) : u;
+}
+function mediaFallbackAttr(rawUrl) {
+  return rawUrl && rawUrl !== mediaRenderUrl(rawUrl)
+    ? ` onerror="this.onerror=null;this.src='${rawUrl}'"`
+    : '';
+}
+function getPostMedia(p) {
+  if (Array.isArray(p.media) && p.media.length) return p.media;
+  const list = [];
+  if (p.image) list.push({ type: 'image', url: p.image });
+  if (p.video) list.push({ type: 'video', url: p.video, live: !!p.live, sound: p.liveSound !== false });
+  return list;
+}
+function mediaHtml(m, cls) {
+  const raw = m.url;
+  const src = mediaRenderUrl(raw);
+  const fallback = mediaFallbackAttr(raw);
+  const clsName = cls === 'post' ? 'post-img' : 'detail-img';
+  const vidCls = cls === 'post' ? 'post-video' : 'detail-video';
+  if (m.type === 'image') {
+    return `<img src="${src}" class="${clsName}" loading="lazy"${fallback}>`;
+  }
+  // #t=0.1 让 iOS 直接显示首帧作为封面
+  const vsrc = `${src}#t=0.1`;
+  if (m.live) {
+    return m.sound === false
+      ? `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}" autoplay muted loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`
+      : `<div class="live-wrap"><video src="${vsrc}" class="${vidCls}" controls loop playsinline webkit-playsinline preload="metadata" style="margin:0;"${fallback}></video><span class="live-badge">实况</span></div>`;
+  }
+  return `<video src="${vsrc}" controls playsinline preload="metadata" class="${vidCls}"${fallback}></video>`;
 }
 
 // ---- Password hash ----
@@ -437,12 +475,7 @@ function renderFeed(posts) {
           <span class="post-vis">${visLabel(p.visibility)}</span>
         </div>
       </div>
-      ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
-      ${p.video ? (p.live
-        ? (p.liveSound === false
-          ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
-          : `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`)
-        : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
+      ${getPostMedia(p).map(m => mediaHtml(m, 'post')).join('')}
       <p class="post-text">${escapeHtml(p.text)}</p>
       <div class="post-time">${formatTime(p.createdAt)}</div>
       <div class="post-actions">
@@ -585,12 +618,7 @@ function renderPostDetail(id) {
         <span class="post-vis">${visLabel(post.visibility)}</span>
       </div>
     </div>
-    ${post.image ? `<img src="${post.image}" class="detail-img">` : ''}
-    ${post.video ? (post.live
-      ? (post.liveSound === false
-        ? `<div class="live-wrap"><video src="${post.video}" class="detail-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
-        : `<div class="live-wrap"><video src="${post.video}" class="detail-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`)
-      : `<video src="${post.video}" controls class="detail-video"></video>`) : ''}
+    ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     <div class="post-time">${formatTime(post.createdAt)}</div>
     <div class="post-actions" style="margin:12px 0;">
@@ -872,12 +900,7 @@ function renderUserPage(userId, user, posts) {
       <div style="margin-top:10px;">
         ${posts.length ? posts.map(p => `
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
-            ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
-            ${p.video ? (p.live
-              ? (p.liveSound === false
-                ? `<div class="live-wrap"><video src="${p.video}" class="post-video" autoplay muted loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`
-                : `<div class="live-wrap"><video src="${p.video}" class="post-video" controls loop playsinline webkit-playsinline style="margin:0;"></video><span class="live-badge">实况</span></div>`)
-              : `<video src="${p.video}" controls class="post-video"></video>`) : ''}
+            ${getPostMedia(p).map(m => mediaHtml(m, 'post')).join('')}
             <p class="post-text">${escapeHtml(p.text)}</p>
             <div class="post-time">${formatTime(p.createdAt)}</div>
           </div>
@@ -904,23 +927,52 @@ function toggleNotifExpand() {
 }
 
 // ---- Publish ----
-let pendingImage = null;
-let pendingVideo = null;
+let pendingMedia = []; // { kind:'image'|'video', data, name, mime, live, sound }
+
+function renderPendingMedia() {
+  const box = document.getElementById('media-preview');
+  if (!box) return;
+  box.innerHTML = pendingMedia.map((m, i) => `
+    <div style="position:relative;flex:0 0 auto;">
+      ${m.kind === 'image'
+        ? `<img src="data:${m.mime};base64,${m.data}" style="width:88px;height:88px;border-radius:10px;object-fit:cover;display:block;">`
+        : `<video src="data:${m.mime};base64,${m.data}#t=0.1" style="width:88px;height:88px;border-radius:10px;object-fit:cover;background:#000;display:block;" muted playsinline preload="metadata"></video>`}
+      <button onclick="removePendingMedia(${i})" style="position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:none;background:#ff4757;color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer;">✕</button>
+      ${m.kind === 'video' && m.live ? '<span class="live-badge" style="top:4px;left:4px;font-size:10px;padding:1px 6px;">实况</span>' : ''}
+    </div>
+  `).join('');
+}
+
+function removePendingMedia(i) {
+  pendingMedia.splice(i, 1);
+  renderPendingMedia();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = ev => resolve(ev.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 function addImage() {
   const input = document.getElementById('img-input');
   input.onchange = async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      alert('图片请小于 5MB');
-      return;
-    }
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     showToast('正在压缩图片...');
-    const base64 = await compressImage(file, 1200, 0.8);
-    pendingImage = base64;
-    document.getElementById('img-preview').src = 'data:image/jpeg;base64,' + base64;
-    document.getElementById('img-preview').style.display = 'block';
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`${file.name} 太大了，请小于 10MB`);
+        continue;
+      }
+      const base64 = await compressImage(file, 1200, 0.8);
+      pendingMedia.push({ kind: 'image', data: base64, name: 'img.jpg', mime: 'image/jpeg' });
+    }
+    input.value = '';
+    renderPendingMedia();
     showToast('✅ 图片已添加');
   };
   input.click();
@@ -929,38 +981,31 @@ function addImage() {
 function addVideo(isLive = false) {
   const input = document.getElementById('video-input');
   input.onchange = async e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) {
-      alert('视频请小于 20MB');
-      return;
-    }
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const liveSound = isLive && document.getElementById('live-sound-toggle').checked;
     showToast('正在处理视频...');
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const base64 = ev.target.result.split(',')[1];
-      pendingVideo = base64;
-      pendingVideoName = file.name;
-      pendingLive = isLive;
-      if (isLive) {
-        pendingLiveSound = confirm('这段实况要带声音播放吗？\n\n点「确定」= 带声音（点播放键，播放原声）\n点「取消」= 静音循环播放');
-      } else {
-        pendingLiveSound = true;
+    for (const file of files) {
+      if (file.size > 20 * 1024 * 1024) {
+        alert(`${file.name} 太大了，请小于 20MB`);
+        continue;
       }
-      document.getElementById('video-preview').src = ev.target.result;
-      document.getElementById('video-preview').style.display = 'block';
-      showToast(isLive
-        ? (pendingLiveSound ? '✅ 实况已添加（带声音）' : '✅ 实况已添加（静音循环）')
-        : '✅ 视频已添加');
-    };
-    reader.readAsDataURL(file);
+      const base64 = await fileToBase64(file);
+      pendingMedia.push({
+        kind: 'video',
+        data: base64,
+        name: file.name,
+        mime: file.type || 'video/mp4',
+        live: isLive,
+        sound: isLive ? liveSound : true
+      });
+    }
+    input.value = '';
+    renderPendingMedia();
+    showToast(isLive ? `✅ 实况已添加（${liveSound ? '带声音' : '静音循环'}）` : '✅ 视频已添加');
   };
   input.click();
 }
-
-let pendingVideoName = '';
-let pendingLive = false;
-let pendingLiveSound = true;
 
 async function compressImage(file, maxDim, quality) {
   return new Promise((resolve) => {
@@ -986,21 +1031,33 @@ async function publishPost() {
   const text = document.getElementById('post-text').value.trim();
   const visibility = document.getElementById('visibility').value;
 
-  if (!text && !pendingImage && !pendingVideo) {
+  if (!text && !pendingMedia.length) {
     alert('请输入内容或添加图片/视频');
     return;
   }
 
   try {
-    showToast('发布中...');
+    const total = pendingMedia.length;
+    showToast(total ? `上传中 0/${total}` : '发布中...');
 
-    let imageUrl = null, videoUrl = null;
-    if (pendingImage) {
-      imageUrl = await ghUploadMedia('img.jpg', pendingImage);
-    }
-    if (pendingVideo) {
-      videoUrl = await ghUploadMedia(pendingVideoName || 'video.mp4', pendingVideo);
-    }
+    // 所有图片/视频并行上传，明显更快
+    let done = 0;
+    const urls = await Promise.all(pendingMedia.map(async (m) => {
+      const url = await ghUploadMedia(m.name, m.data);
+      done++;
+      showToast(`上传中 ${done}/${total}`);
+      return url;
+    }));
+
+    const media = urls.map((url, i) => {
+      const m = pendingMedia[i];
+      const item = { type: m.kind, url };
+      if (m.kind === 'video') {
+        item.live = !!m.live;
+        item.sound = !!m.sound;
+      }
+      return item;
+    });
 
     const post = {
       id: 'p_' + Date.now(),
@@ -1008,10 +1065,9 @@ async function publishPost() {
       authorName: currentUser.username,
       authorAvatar: currentUser.avatar || null,
       text,
-      image: imageUrl,
-      video: videoUrl,
-      live: !!(videoUrl && pendingLive),
-      liveSound: !!(videoUrl && pendingLive && pendingLiveSound),
+      media,
+      image: (media.find(m => m.type === 'image') || {}).url || null,
+      video: (media.find(m => m.type === 'video') || {}).url || null,
       visibility,
       selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
       likes: [],
@@ -1030,14 +1086,9 @@ async function publishPost() {
     });
 
     // Reset form
-    pendingImage = null;
-    pendingVideo = null;
-    pendingVideoName = '';
-    pendingLive = false;
-    pendingLiveSound = true;
+    pendingMedia = [];
+    renderPendingMedia();
     document.getElementById('post-text').value = '';
-    document.getElementById('img-preview').style.display = 'none';
-    document.getElementById('video-preview').style.display = 'none';
     document.getElementById('visibility').value = 'private';
 
     showToast('✅ 发布成功！');
