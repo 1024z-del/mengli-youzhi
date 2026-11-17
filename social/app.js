@@ -114,6 +114,9 @@ window.addEventListener('popstate', (e) => {
       replyToUser = null;
       currentDetailPostId = null;
     }
+    if (id === 'user-page') {
+      currentUserPageId = null;
+    }
     // 如果栈里还有上一个弹窗，重新显示它
     if (overlayStack.length) {
       const prev = overlayStack[overlayStack.length - 1];
@@ -231,7 +234,7 @@ async function doRegister() {
     await ghPutFile('data/invites.json', invites, inviteSha);
 
     // 5. Auto-login
-    setUser({ id: newUser.id, username: newUser.username, avatar: null, email: newUser.email });
+    setUser({ id: newUser.id, username: newUser.username, avatar: null, email: newUser.email, cover: null, bio: '' });
     showApp();
     showToast('✅ 注册成功！');
   } catch (e) {
@@ -262,7 +265,7 @@ async function doLogin() {
       alert('密码错误');
       return;
     }
-    setUser({ id: user.id, username: user.username, avatar: user.avatar || null, email: user.email });
+    setUser({ id: user.id, username: user.username, avatar: user.avatar || null, email: user.email, cover: user.cover || null, bio: user.bio || '' });
     showApp();
     showToast('✅ 登录成功！');
   } catch (e) {
@@ -423,7 +426,7 @@ function renderFeed(posts) {
     return `
     <div class="post-card" onclick="viewPost('${p.id}')">
       <div class="post-header">
-        ${getAvatarHtml(p.authorName, p.authorAvatar)}
+        ${getAvatarHtml(p.authorName, p.authorAvatar, p.authorId)}
         <div style="flex:1;">
           <span class="post-author">${escapeHtml(p.authorName)}</span>
           <span class="post-vis">${visLabel(p.visibility)}</span>
@@ -445,15 +448,20 @@ function renderFeed(posts) {
   `;}).join('');
 }
 
-function getAvatarHtml(name, avatarUrl) {
+function getAvatarHtml(name, avatarUrl, userId) {
+  let inner;
   if (avatarUrl) {
-    return `<img src="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;">`;
+    inner = `<img src="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;">`;
+  } else {
+    // 默认头像：昵称首字 + 渐变背景
+    const initial = (name || '?').charAt(0).toUpperCase();
+    const colors = ['#667eea','#764ba2','#f093fb','#4facfe','#43e97b','#fa709a','#fee140','#30cfd0'];
+    const color = colors[name ? name.charCodeAt(0) % colors.length : 0];
+    inner = `<div style="width:36px;height:36px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;margin-right:10px;flex-shrink:0;">${escapeHtml(initial)}</div>`;
   }
-  // 默认头像：昵称首字 + 渐变背景
-  const initial = (name || '?').charAt(0).toUpperCase();
-  const colors = ['#667eea','#764ba2','#f093fb','#4facfe','#43e97b','#fa709a','#fee140','#30cfd0'];
-  const color = colors[name ? name.charCodeAt(0) % colors.length : 0];
-  return `<div style="width:36px;height:36px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;margin-right:10px;flex-shrink:0;">${escapeHtml(initial)}</div>`;
+  if (!userId) return inner;
+  // 可点击进入个人主页（阻止冒泡，避免触发外层卡片的点击）
+  return `<span onclick="event.stopPropagation();openUserPage('${userId}')" style="display:inline-flex;cursor:pointer;flex-shrink:0;">${inner}</span>`;
 }
 
 function visLabel(v) {
@@ -562,7 +570,7 @@ function renderPostDetail(id) {
   const comments = post.comments || [];
   document.getElementById('detail-content').innerHTML = `
     <div class="detail-header">
-      ${getAvatarHtml(post.authorName, post.authorAvatar)}
+      ${getAvatarHtml(post.authorName, post.authorAvatar, post.authorId)}
       <div style="flex:1;">
         <span class="post-author">${escapeHtml(post.authorName)}</span>
         <span class="post-vis">${visLabel(post.visibility)}</span>
@@ -582,7 +590,7 @@ function renderPostDetail(id) {
       <h4 style="font-size:14px;color:#666;margin-bottom:10px;">评论 (${comments.length})</h4>
       ${comments.length ? comments.map(c => `
         <div class="comment-item" onclick="replyToComment('${c.userId}','${escapeHtml(c.username).replace(/'/g, "\\'")}')">
-          ${getAvatarHtml(c.username, c.avatar)}
+          ${getAvatarHtml(c.username, c.avatar, c.userId)}
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:600;color:#333;">
               ${escapeHtml(c.username)}
@@ -791,6 +799,87 @@ function closeDetail() {
   closeOverlay('detail-view');
 }
 
+// ---- 个人主页 ----
+let currentUserPageId = null;
+
+async function openUserPage(userId) {
+  currentUserPageId = userId;
+  // 先用本地缓存秒开
+  let user = allUsersCache.find(u => u.id === userId);
+  let visible = allPostsCache
+    .filter(p => p.authorId === userId && canViewPost(p, currentUser.id))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  renderUserPage(userId, user, visible);
+  document.getElementById('user-page').style.display = 'flex';
+  openOverlay('user-page');
+
+  // 后台刷新用户信息和动态
+  try {
+    const [{ content: users }, { content: posts }] = await Promise.all([
+      ghGetFile('data/users.json'),
+      ghGetFile('data/posts.json')
+    ]);
+    if (users) allUsersCache = users;
+    if (posts) allPostsCache = posts;
+    user = allUsersCache.find(u => u.id === userId);
+    visible = allPostsCache
+      .filter(p => p.authorId === userId && canViewPost(p, currentUser.id))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // 只更新当前仍打开的这个主页
+    if (currentUserPageId === userId && overlayStack.includes('user-page')) {
+      renderUserPage(userId, user, visible);
+    }
+  } catch (e) {
+    console.error('主页刷新失败', e);
+  }
+}
+
+function renderUserPage(userId, user, posts) {
+  const name = user ? user.username : '未知用户';
+  const bio = user ? (user.bio || '') : '';
+  const cover = user ? user.cover : null;
+  const isMe = userId === currentUser.id;
+  const coverStyle = cover
+    ? `background-image:url('${cover}');background-size:cover;background-position:center;`
+    : 'background:linear-gradient(135deg,#a78bfa,#7c3aed);';
+  const avatarHtml = (user && user.avatar)
+    ? `<img src="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;">`
+    : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;background:#a78bfa;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>`;
+
+  document.getElementById('user-page-content').innerHTML = `
+    <div style="${coverStyle}height:140px;position:relative;">
+      <button onclick="closeUserPage()" style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;">‹</button>
+      ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;">编辑</button>` : ''}
+    </div>
+    <div style="padding:0 16px 16px;position:relative;">
+      <div style="margin-top:-36px;">${avatarHtml}</div>
+      <div style="font-size:18px;font-weight:700;color:#333;margin-top:8px;">${escapeHtml(name)}</div>
+      <div style="font-size:13px;color:#666;margin-top:6px;white-space:pre-wrap;line-height:1.6;">${bio ? escapeHtml(bio) : (isMe ? '还没有自我介绍，点右上角「编辑」填写吧～' : '这个人很神秘，什么都没写～')}</div>
+      <div style="font-size:13px;color:#999;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:12px;">TA 的动态 (${posts.length})</div>
+      <div style="margin-top:10px;">
+        ${posts.length ? posts.map(p => `
+          <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
+            ${p.image ? `<img src="${p.image}" class="post-img">` : ''}
+            ${p.video ? `<video src="${p.video}" controls class="post-video"></video>` : ''}
+            <p class="post-text">${escapeHtml(p.text)}</p>
+            <div class="post-time">${formatTime(p.createdAt)}</div>
+          </div>
+        `).join('') : '<p style="color:#999;text-align:center;padding:20px;">还没有动态</p>'}
+      </div>
+      <button onclick="closeUserPage()" class="btn-secondary" style="margin-top:12px;">返回</button>
+    </div>
+  `;
+}
+
+function closeUserPage() {
+  currentUserPageId = null;
+  closeOverlay('user-page');
+}
+
+function openMyUserPage() {
+  if (currentUser) openUserPage(currentUser.id);
+}
+
 let notifExpanded = false;
 function toggleNotifExpand() {
   notifExpanded = !notifExpanded;
@@ -968,7 +1057,7 @@ async function loadFriendsPage() {
   if (myFriends.length) {
     html += myFriends.map(u => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;">
-        <span>${escapeHtml(u.username)}</span>
+        <span style="display:flex;align-items:center;">${getAvatarHtml(u.username, u.avatar, u.id)}${escapeHtml(u.username)}</span>
         <button onclick="removeFriend('${u.id}')" class="btn-secondary" style="padding:4px 10px;">删除</button>
       </div>
     `).join('');
@@ -980,7 +1069,7 @@ async function loadFriendsPage() {
   if (others.length) {
     html += others.map(u => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#fff;border-radius:10px;margin-bottom:8px;">
-        <span>${escapeHtml(u.username)}</span>
+        <span style="display:flex;align-items:center;">${getAvatarHtml(u.username, u.avatar, u.id)}${escapeHtml(u.username)}</span>
         <button onclick="addFriend('${u.id}')" class="btn-primary" style="padding:4px 10px;">+ 加好友</button>
       </div>
     `).join('');
@@ -1419,14 +1508,28 @@ async function cleanupOldTrash() {
 
 // ---- Profile editing ----
 let pendingAvatar = null;
+let pendingCover = null;
 
 function openProfileModal() {
   document.getElementById('edit-username').value = currentUser.username || '';
   document.getElementById('edit-email').value = currentUser.email || '';
+  document.getElementById('edit-bio').value = currentUser.bio || '';
   document.getElementById('edit-password').value = '';
   pendingAvatar = null;
+  pendingCover = null;
   const avatarEdit = document.getElementById('profile-avatar-edit');
   avatarEdit.src = currentUser.avatar || getAvatarUrl(currentUser.username);
+  // 封面预览
+  const coverEdit = document.getElementById('profile-cover-edit');
+  if (coverEdit) {
+    if (currentUser.cover) {
+      coverEdit.style.backgroundImage = `url('${currentUser.cover}')`;
+      coverEdit.textContent = '';
+    } else {
+      coverEdit.style.backgroundImage = '';
+      coverEdit.textContent = '点击更换主页背景图';
+    }
+  }
   document.getElementById('profile-modal').style.display = 'flex';
   openOverlay('profile-modal');
 }
@@ -1451,6 +1554,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const img = new Image();
         img.onload = () => openCropper(img);
         img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 主页背景图上传（不做裁剪，直接预览）
+  const coverInput = document.getElementById('cover-input');
+  if (coverInput) {
+    coverInput.addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = evt => {
+        pendingCover = evt.target.result;
+        const coverEdit = document.getElementById('profile-cover-edit');
+        if (coverEdit) {
+          coverEdit.style.backgroundImage = `url('${evt.target.result}')`;
+          coverEdit.textContent = '';
+        }
       };
       reader.readAsDataURL(file);
     });
@@ -1580,6 +1702,7 @@ async function saveProfile() {
   const newUsername = document.getElementById('edit-username').value.trim();
   const newEmail = document.getElementById('edit-email').value.trim();
   const newPassword = document.getElementById('edit-password').value;
+  const newBio = document.getElementById('edit-bio').value.trim();
 
   if (!newUsername || !newEmail) {
     alert('昵称和邮箱不能为空');
@@ -1595,6 +1718,11 @@ async function saveProfile() {
     let avatarUrl = currentUser.avatar;
     if (pendingAvatar) {
       avatarUrl = await ghUploadMedia('avatar.jpg', pendingAvatar);
+    }
+    // 上传主页背景图
+    let coverUrl = currentUser.cover;
+    if (pendingCover) {
+      coverUrl = await ghUploadMedia('cover.jpg', pendingCover);
     }
 
     // 更新用户信息
@@ -1612,10 +1740,13 @@ async function saveProfile() {
     user.username = newUsername;
     user.email = newEmail;
     user.avatar = avatarUrl;
+    user.cover = coverUrl || null;
+    user.bio = newBio;
     if (newPassword) {
       user.password = await hashPwd(newPassword);
     }
     await ghPutFile('data/users.json', users, sha);
+    allUsersCache = users;
 
     // 如果昵称或头像变了，更新所有该用户的日记（通过队列）
     if (newUsername !== oldName || avatarUrl !== currentUser.avatar) {
@@ -1641,7 +1772,9 @@ async function saveProfile() {
       id: currentUser.id,
       username: newUsername,
       email: newEmail,
-      avatar: avatarUrl
+      avatar: avatarUrl,
+      cover: coverUrl || null,
+      bio: newBio
     });
 
     closeProfileModal();
@@ -1663,10 +1796,21 @@ function showApp() {
   document.getElementById('auth-page').style.display = 'none';
   document.getElementById('main-app').style.display = 'block';
   switchTab('feed');
+  loadUsersCache();
   loadPosts();
   loadNotifications();
   cleanupOldTrash();
   startPolling();
+}
+
+// 预加载用户列表（供个人主页、头像使用）
+async function loadUsersCache() {
+  try {
+    const { content: users } = await ghGetFile('data/users.json');
+    allUsersCache = users || [];
+  } catch (e) {
+    console.error('加载用户列表失败', e);
+  }
 }
 
 // ---- 后台轮询：实时接收新消息和新动态 ----
