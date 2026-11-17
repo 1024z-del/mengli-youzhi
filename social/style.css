@@ -568,8 +568,9 @@ textarea:focus { border-color: #6c5ce7; }
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   display: flex;
-  padding: 8px 0;
-  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  padding: 2px 0;
+  padding-bottom: calc(2px + env(safe-area-inset-bottom));
+  transform: translateY(4px);
   z-index: 50;
 }
 .tab-btn {
@@ -581,7 +582,7 @@ textarea:focus { border-color: #6c5ce7; }
   border: none;
   background: transparent;
   cursor: pointer;
-  padding: 6px;
+  padding: 4px 6px;
   color: rgba(255, 255, 255, 0.5);
   transition: color 0.25s, transform 0.25s;
 }

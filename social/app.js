@@ -60,14 +60,33 @@ async function ghUploadMedia(name, base64) {
   const safeName = String(name || 'file').replace(/[^\w.\-]+/g, '_');
   const path = `media/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
   const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}`;
-  const body = {
+  const bodyStr = JSON.stringify({
     message: `upload media`,
     content: base64,
     branch: GH.branch
-  };
-  const r = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(`上传失败 ${r.status}`);
-  return `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/${path}`;
+  });
+  let lastErr = null;
+  // 大视频上传容易超时/冲突，最多重试 3 次
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 120000);
+    let fatal = null;
+    try {
+      const r = await fetch(url, { method: 'PUT', headers, body: bodyStr, signal: ctrl.signal });
+      if (r.ok) return `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/${path}`;
+      const err = new Error(`上传失败 ${r.status}`);
+      // 409/422/5xx 多为并发提交冲突或服务端临时问题，可以重试
+      if ([409, 422, 500, 502, 503, 504].includes(r.status)) lastErr = err;
+      else fatal = err;
+    } catch (e) {
+      lastErr = (e && e.name === 'AbortError') ? new Error('上传超时，请检查网络后重试') : e;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (fatal) throw fatal;
+    if (attempt < 3) await new Promise(res => setTimeout(res, 1000 * attempt));
+  }
+  throw lastErr || new Error('上传失败');
 }
 
 // ---- 媒体地址：优先用 Pages 域名（国内更稳更快），失败再回退 raw ----
@@ -1064,15 +1083,14 @@ function addVideo(isLive = false) {
   input.onchange = async e => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const liveSound = isLive && document.getElementById('live-sound-toggle').checked;
     showToast('正在处理视频...');
     for (const file of files) {
       if (file.size > 20 * 1024 * 1024) {
         alert(`${file.name} 太大了，请小于 20MB`);
         continue;
       }
-      const base64 = await fileToBase64(file);
       const thumb = await makeVideoThumb(file);
+      const base64 = await fileToBase64(file);
       pendingMedia.push({
         kind: 'video',
         data: base64,
@@ -1080,12 +1098,12 @@ function addVideo(isLive = false) {
         name: file.name,
         mime: file.type || 'video/mp4',
         live: isLive,
-        sound: isLive ? liveSound : true
+        sound: true
       });
     }
     input.value = '';
     renderPendingMedia();
-    showToast(isLive ? `✅ 实况已添加（${liveSound ? '带声音' : '静音循环'}）` : '✅ 视频已添加');
+    showToast(isLive ? '✅ 实况已添加（可在播放器里静音）' : '✅ 视频已添加');
   };
   input.click();
 }
@@ -1110,6 +1128,21 @@ async function compressImage(file, maxDim, quality) {
   });
 }
 
+function showUploadProgress(text) {
+  let el = document.getElementById('upload-progress-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'upload-progress-toast';
+    el.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.82);color:#fff;padding:10px 20px;border-radius:20px;z-index:9999;font-size:14px;max-width:86vw;text-align:center;line-height:1.5;';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+}
+function hideUploadProgress() {
+  const el = document.getElementById('upload-progress-toast');
+  if (el) el.remove();
+}
+
 async function publishPost() {
   const text = document.getElementById('post-text').value.trim();
   const visibility = document.getElementById('visibility').value;
@@ -1121,20 +1154,28 @@ async function publishPost() {
 
   try {
     const total = pendingMedia.length;
-    showToast(total ? `上传中 0/${total}` : '发布中...');
-
-    // 所有图片/视频并行上传，明显更快
     let done = 0;
-    const uploaded = await Promise.all(pendingMedia.map(async (m) => {
+    showUploadProgress(total ? `上传中 0/${total}...` : '发布中...');
+
+    // 逐个上传，避免同时提交互相冲突；大视频可能较慢
+    const uploaded = [];
+    for (let i = 0; i < pendingMedia.length; i++) {
+      const m = pendingMedia[i];
+      const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
+      showUploadProgress(`上传中 ${done}/${total}：${label}${m.kind === 'video' ? '（较大请稍等）' : ''}...`);
       const url = await ghUploadMedia(m.name, m.data);
       let poster = null;
       if (m.kind === 'video' && m.thumb) {
-        poster = await ghUploadMedia('thumb.jpg', m.thumb);
+        try {
+          poster = await ghUploadMedia('thumb.jpg', m.thumb);
+        } catch (e) {
+          console.warn('封面图上传失败', e);
+        }
       }
+      uploaded.push({ url, poster });
       done++;
-      showToast(`上传中 ${done}/${total}`);
-      return { url, poster };
-    }));
+      showUploadProgress(`上传中 ${done}/${total}...`);
+    }
 
     const media = uploaded.map((u, i) => {
       const m = pendingMedia[i];
@@ -1179,10 +1220,12 @@ async function publishPost() {
     document.getElementById('post-text').value = '';
     document.getElementById('visibility').value = 'private';
 
+    hideUploadProgress();
     showToast('✅ 发布成功！');
     switchTab('feed');
     loadPosts();
   } catch (e) {
+    hideUploadProgress();
     alert('发布失败：' + e.message);
     console.error(e);
   }
