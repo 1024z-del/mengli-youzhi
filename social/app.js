@@ -721,6 +721,24 @@ function refreshPostViews() {
   }
 }
 
+// 清除单条动态的位置（仅作者本人）
+function removePostLocation(postId) {
+  const post = (allPostsCache || []).find(p => p.id === postId);
+  if (!post) return;
+  if (post.authorId !== currentUser.id) return;
+  if (!confirm('确定清除这条动态的位置吗？')) return;
+  post.location = null;
+  renderFeed(allPostsCache.filter(p => canViewPost(p, currentUser.id))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+  renderPostDetail(postId);
+  showToast('已清除位置');
+  enqueuePostsWrite(posts => {
+    const t = posts.find(p => p.id === postId);
+    if (t) t.location = null;
+    return posts;
+  });
+}
+
 // 用缓存渲染详情页（不请求 GitHub）
 function renderPostDetail(id) {
   const post = allPostsCache.find(p => p.id === id);
@@ -738,7 +756,7 @@ function renderPostDetail(id) {
     </div>
     ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
     <p class="detail-text">${escapeHtml(post.text)}</p>
-    ${post.location ? `<div class="post-loc">📍 ${escapeHtml(locText(post.location))}</div>` : ''}
+    ${post.location ? `<div class="post-loc">📍 ${escapeHtml(locText(post.location))}${post.authorId === currentUser.id ? ` <button class="loc-clear" onclick="removePostLocation('${post.id}')">清除位置</button>` : ''}</div>` : ''}
     <div class="post-time">${formatTime(post.createdAt)}</div>
     <div class="post-actions" style="margin:12px 0;">
       <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="toggleLike('${post.id}')">

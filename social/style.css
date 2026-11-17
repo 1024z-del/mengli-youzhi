@@ -762,3 +762,15 @@ textarea:focus { border-color: #6c5ce7; }
 .loc-item:active { background: rgba(255, 255, 255, 0.6); }
 .loc-name { font-size: 14px; color: #333; font-weight: 500; }
 .loc-addr { font-size: 11px; color: #999; margin-top: 2px; line-height: 1.4; }
+
+/* 单条动态清除位置 */
+.loc-clear {
+  margin-left: 6px;
+  padding: 1px 8px;
+  border: 1px solid rgba(231, 76, 60, 0.35);
+  background: rgba(231, 76, 60, 0.1);
+  color: #e0555a;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+}
