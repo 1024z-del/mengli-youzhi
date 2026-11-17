@@ -206,14 +206,24 @@ input[type="checkbox"] {
 }
 /* 梦幻渐变标题 */
 .dream-title {
-  background: linear-gradient(100deg, #fff8ef 0%, #ffe6d2 12%, #f9d8ef 26%, #e2dcff 42%, #cfe8ff 56%, #e6ddff 70%, #ffeedd 84%, #fff8ef 100%);
-  background-size: 300% 100%;
+  background: linear-gradient(102deg,
+    #fdfbf7 0%,
+    #ece6f7 12%,
+    #ccd2ee 24%,
+    #e6d8ee 36%,
+    #f4e2da 47%,
+    #dde7f6 58%,
+    #c7d0ec 70%,
+    #e9e2f4 82%,
+    #fdfbf7 100%);
+  background-size: 280% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  filter: drop-shadow(0 1px 6px rgba(255, 240, 255, 0.55)) drop-shadow(0 0 16px rgba(200, 180, 255, 0.45));
-  animation: titleShimmer 9s ease-in-out infinite alternate;
+  letter-spacing: 0.6px;
+  filter: drop-shadow(0 1px 1px rgba(80, 60, 130, 0.35)) drop-shadow(0 0 12px rgba(212, 198, 255, 0.55));
+  animation: titleShimmer 14s ease-in-out infinite alternate;
 }
 @keyframes titleShimmer {
   from { background-position: 0% 50%; }
