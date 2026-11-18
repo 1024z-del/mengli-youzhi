@@ -358,8 +358,12 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 96;
+const CURRENT_V = 97;
 function forceReload() {
+  // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
+  const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
+  if (Date.now() - last < 20000) return;
+  sessionStorage.setItem('mlyz_reload_at', Date.now());
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
   location.replace(url.toString());
@@ -371,6 +375,8 @@ function checkUpdate() {
       const m = html.match(/app\.js\?v=(\d+)/);
       if (m && parseInt(m[1]) !== CURRENT_V) {
         forceReload();
+      } else {
+        sessionStorage.removeItem('mlyz_reload_at');
       }
     })
     .catch(() => {});
@@ -386,6 +392,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=95"></script>
+<script src="app.js?v=97"></script>
 </body>
 </html>
