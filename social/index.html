@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=49">
+  <link rel="stylesheet" href="style.css?v=50">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -73,18 +73,28 @@
 
         <div id="media-preview" style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin:10px 0;"></div>
 
-        <div class="sticker-bar">
-          <span>🎀 贴纸：</span>
-          <button class="sticker" onclick="addSticker('😊')">😊</button>
-          <button class="sticker" onclick="addSticker('🥰')">🥰</button>
-          <button class="sticker" onclick="addSticker('😢')">😢</button>
-          <button class="sticker" onclick="addSticker('😴')">😴</button>
-          <button class="sticker" onclick="addSticker('💫')">💫</button>
-          <button class="sticker" onclick="addSticker('🌸')">🌸</button>
-          <button class="sticker" onclick="addSticker('🌙')">🌙</button>
-          <button class="sticker" onclick="addSticker('⭐')">⭐</button>
-          <button class="sticker" onclick="addSticker('❤️')">❤️</button>
-          <button class="sticker" onclick="addSticker('☕')">☕</button>
+        <div class="sticker-bar" id="weather-bar">
+          <span>🌤 今日天气：</span>
+          <button class="mood-chip-btn" data-value="☀️ 晴" onclick="selectMoodChip('weather', this)">☀️ 晴</button>
+          <button class="mood-chip-btn" data-value="🌤 多云" onclick="selectMoodChip('weather', this)">🌤 多云</button>
+          <button class="mood-chip-btn" data-value="☁️ 阴" onclick="selectMoodChip('weather', this)">☁️ 阴</button>
+          <button class="mood-chip-btn" data-value="🌧 雨" onclick="selectMoodChip('weather', this)">🌧 雨</button>
+          <button class="mood-chip-btn" data-value="⛈ 雷雨" onclick="selectMoodChip('weather', this)">⛈ 雷雨</button>
+          <button class="mood-chip-btn" data-value="🌫 雾" onclick="selectMoodChip('weather', this)">🌫 雾</button>
+          <button class="mood-chip-btn" data-value="❄️ 雪" onclick="selectMoodChip('weather', this)">❄️ 雪</button>
+          <button class="mood-chip-btn" data-value="🌪 风大" onclick="selectMoodChip('weather', this)">🌪 风大</button>
+        </div>
+
+        <div class="sticker-bar" id="mood-bar">
+          <span>💗 此时心情：</span>
+          <button class="mood-chip-btn" data-value="😊 开心" onclick="selectMoodChip('mood', this)">😊 开心</button>
+          <button class="mood-chip-btn" data-value="🥰 幸福" onclick="selectMoodChip('mood', this)">🥰 幸福</button>
+          <button class="mood-chip-btn" data-value="😌 平静" onclick="selectMoodChip('mood', this)">😌 平静</button>
+          <button class="mood-chip-btn" data-value="😴 疲惫" onclick="selectMoodChip('mood', this)">😴 疲惫</button>
+          <button class="mood-chip-btn" data-value="🥺 想念" onclick="selectMoodChip('mood', this)">🥺 想念</button>
+          <button class="mood-chip-btn" data-value="😢 难过" onclick="selectMoodChip('mood', this)">😢 难过</button>
+          <button class="mood-chip-btn" data-value="😤 生气" onclick="selectMoodChip('mood', this)">😤 生气</button>
+          <button class="mood-chip-btn" data-value="🤩 兴奋" onclick="selectMoodChip('mood', this)">🤩 兴奋</button>
         </div>
 
         <div class="vis-box">
@@ -106,12 +116,11 @@
         <div class="action-row">
           <button class="action-btn" onclick="addImage()">📷 图片</button>
           <button class="action-btn" onclick="addVideo(false)">🎬 视频</button>
-          <button class="action-btn" onclick="addVideo(true)">🫧 实况</button>
           <button class="action-btn" onclick="addMusic()">🎵 音乐</button>
         </div>
         <div id="music-preview" class="pending-music"></div>
         <p style="font-size:12px;color:#999;margin:4px 0 8px;">音乐：选择自己的 MP3 / M4A / AAC / WAV，单首不超过 15MB、10 分钟，会和图片一起上传，发布后动态里可播放。加密 / DRM 歌曲无法导入。</p>
-        <p style="font-size:12px;color:#999;margin:4px 0 8px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」。图片/视频都支持一次多选多个。视频会自动压缩后再上传，速度更快。</p>
+        <p style="font-size:12px;color:#999;margin:4px 0 8px;">图片/视频都支持一次多选多个，长按图片可以拖动排序。视频会自动压缩后再上传，速度更快。</p>
         <input type="file" id="img-input" accept="image/*" multiple style="display:none;">
         <input type="file" id="video-input" accept="video/*" multiple style="display:none;">
         <input type="file" id="music-input" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,.mp3,.m4a,.aac,.wav" style="display:none;">
@@ -358,7 +367,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 100;
+const CURRENT_V = 101;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -392,6 +401,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=100"></script>
+<script src="app.js?v=101"></script>
 </body>
 </html>

@@ -178,7 +178,7 @@ function mediaListHtml(p, cls) {
   const list = getPostMedia(p);
   const allImgs = list.length >= 1 && list.every(m => m.type === 'image');
   if (cls !== 'post' || !allImgs) return list.map(m => mediaHtml(m, cls)).join('');
-  galleryStore[p.id] = list.map(m => m.url);
+  galleryStore[p.id] = list.map(m => ({ url: m.url, thumb: m.thumb || null }));
   const cols = list.length === 1 ? 1 : (list.length === 4 ? 2 : 3);
   const cells = list.map((m, i) => `<div class="img-cell" onclick="event.stopPropagation();openImageGallery('${p.id}',${i})">
       <img src="${mediaPagesUrl(m.thumb || m.url)}" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || m.url)}>
@@ -202,11 +202,18 @@ function renderGallery(urls, start, showIdx) {
   const viewer = document.getElementById('media-viewer');
   const content = document.getElementById('media-viewer-content');
   if (!viewer || !content) return;
+  const items = (urls || []).map(u => typeof u === 'string' ? { url: u, thumb: null } : u);
+  if (!items.length) return;
   content.style.width = '100%';
   content.style.height = '92vh';
-  content.innerHTML = `<div class="gal-track">${urls.map((u, i) =>
-    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"${imgFallbackAttr(u)}>${showIdx ? `<span class="gal-idx">${i + 1}/${urls.length}</span>` : ''}</div>`
-  ).join('')}</div>`;
+  // 先用缩略图铺底，大图加载完成后再淡入，避免出现长时间空白
+  content.innerHTML = `<div class="gal-track">${items.map((it, i) => `
+    <div class="gal-slide">
+      ${it.thumb ? `<img class="gal-ph" src="${mediaPagesUrl(it.thumb)}" decoding="async" alt="">` : ''}
+      <span class="gal-spin" aria-hidden="true"></span>
+      <img class="gal-img" src="${mediaPagesUrl(it.url)}"${imgFallbackAttr(it.url)} loading="${i === start ? 'eager' : 'lazy'}" decoding="async" onload="this.parentNode.classList.add('ready')">
+      ${showIdx ? `<span class="gal-idx">${i + 1}/${items.length}</span>` : ''}
+    </div>`).join('')}</div>`;
   viewer.style.display = 'flex';
   const track = content.querySelector('.gal-track');
   // 点空白/轻点关闭；左右滑动时不误触关闭
@@ -670,8 +677,9 @@ function renderFeed(posts) {
       ${mediaListHtml(p, 'post')}
       ${musicBarHtml(p)}
       <p class="post-text">${escapeHtml(p.text)}</p>
+      ${postMetaHtml(p)}
       ${p.location ? `<div class="post-loc">📍 ${escapeHtml(locText(p.location))}</div>` : ''}
-      <div class="post-time">${formatTime(p.createdAt)}</div>
+      <div class="post-time">${postTimeHtml(p)}</div>
       <div class="post-actions">
         <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="event.stopPropagation();toggleLike('${p.id}')">
           ${liked ? '❤️' : '🤍'} ${likeCount}
@@ -715,6 +723,22 @@ function escapeHtml(s) {
 function formatTime(t) {
   const d = new Date(t);
   return `${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+// 编辑时间：同日只显示时分，跨天带上日期
+function formatEditTime(t, createdAt) {
+  const d = new Date(t);
+  const c = new Date(createdAt);
+  const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return d.toDateString() === c.toDateString() ? hm : `${d.getMonth()+1}月${d.getDate()}日 ${hm}`;
+}
+
+// 发布时间 + 每次编辑时间
+function postTimeHtml(p) {
+  const base = formatTime(p.createdAt);
+  const edits = Array.isArray(p.editedAt) ? p.editedAt : [];
+  if (!edits.length) return base;
+  return `${base} · 编辑于 ${edits.map(t => formatEditTime(t, p.createdAt)).join('、')}`;
 }
 
 // ---- View post detail ----
@@ -835,8 +859,9 @@ function renderPostDetail(id) {
     ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
     ${musicBarHtml(post)}
     <p class="detail-text">${escapeHtml(post.text)}</p>
+    ${postMetaHtml(post)}
     ${post.location ? `<div class="post-loc">📍 ${escapeHtml(locText(post.location))}${post.authorId === currentUser.id ? ` <button class="loc-clear" onclick="removePostLocation('${post.id}')">清除位置</button>` : ''}</div>` : ''}
-    <div class="post-time">${formatTime(post.createdAt)}</div>
+    <div class="post-time">${postTimeHtml(post)}</div>
     <div class="post-actions" style="margin:12px 0;">
       <span class="action-btn-like ${liked ? 'liked' : ''}" onclick="toggleLike('${post.id}')">
         ${liked ? '❤️' : '🤍'} ${(post.likes || []).length}
@@ -1120,7 +1145,8 @@ function renderUserPage(userId, user, posts) {
             ${mediaListHtml(p, 'post')}
             ${musicBarHtml(p)}
             <p class="post-text">${escapeHtml(p.text)}</p>
-            <div class="post-time">${formatTime(p.createdAt)}</div>
+            ${postMetaHtml(p)}
+            <div class="post-time">${postTimeHtml(p)}</div>
           </div>
         `).join('') : '<p style="color:#999;text-align:center;padding:20px;">还没有动态</p>'}
       </div>
@@ -2107,6 +2133,8 @@ async function publishPost() {
       location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
       likes: [],
       comments: [],
+      weather: pickedWeather || null,
+      mood: pickedMood || null,
       createdAt: new Date().toISOString()
     };
 
@@ -2126,6 +2154,9 @@ async function publishPost() {
     clearPendingMusic();
     document.getElementById('post-text').value = '';
     document.getElementById('visibility').value = 'private';
+    pickedWeather = '';
+    pickedMood = '';
+    syncMoodChips();
     clearLocation();
 
     hideUploadProgress();
@@ -3273,10 +3304,32 @@ function onVisChange() {
   selectedFriendIds = [];
 }
 
-function addSticker(s) {
-  const ta = document.getElementById('post-text');
-  ta.value += s;
-  ta.focus();
+// ---- 今日天气 / 此时心情 ----
+let pickedWeather = '';
+let pickedMood = '';
+
+function selectMoodChip(kind, btn) {
+  const v = btn.dataset.value || '';
+  if (kind === 'weather') pickedWeather = pickedWeather === v ? '' : v;
+  else pickedMood = pickedMood === v ? '' : v;
+  syncMoodChips();
+  if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+}
+
+function syncMoodChips() {
+  document.querySelectorAll('#weather-bar .mood-chip-btn').forEach(b => {
+    b.classList.toggle('active', !!pickedWeather && b.dataset.value === pickedWeather);
+  });
+  document.querySelectorAll('#mood-bar .mood-chip-btn').forEach(b => {
+    b.classList.toggle('active', !!pickedMood && b.dataset.value === pickedMood);
+  });
+}
+
+function postMetaHtml(p) {
+  const chips = [];
+  if (p.weather) chips.push(`<span class="post-meta-chip">${escapeHtml(p.weather)}</span>`);
+  if (p.mood) chips.push(`<span class="post-meta-chip">${escapeHtml(p.mood)}</span>`);
+  return chips.length ? `<div class="post-meta-row">${chips.join('')}</div>` : '';
 }
 
 // ---- Init ----

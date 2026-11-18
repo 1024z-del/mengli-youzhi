@@ -685,6 +685,62 @@ textarea:focus { border-color: #6c5ce7; }
   object-fit: contain;
   border-radius: 8px;
 }
+/* 大图查看：缩略图打底 + 加载圈 + 大图淡入 */
+.gal-slide .gal-ph,
+.gal-slide .gal-img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.gal-slide .gal-ph { filter: blur(12px); opacity: 0.85; transform: scale(1.02); }
+.gal-slide .gal-img { opacity: 0; transition: opacity 0.28s ease; }
+.gal-slide.ready .gal-img { opacity: 1; }
+.gal-slide.ready .gal-spin { display: none; }
+.gal-spin {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: musicSpin 0.8s linear infinite;
+}
+/* 今日天气 / 此时心情 */
+.mood-chip-btn {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.42);
+  color: #6c5ce7;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+}
+.mood-chip-btn.active {
+  background: linear-gradient(135deg, #7a63f0, #b86ae8);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 12px rgba(120, 90, 240, 0.35);
+  transform: translateY(-1px);
+}
+.post-meta-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px; }
+.post-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  color: #6a5acd;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .media-thumb .live-badge {
   top: 8px;
   left: 8px;
