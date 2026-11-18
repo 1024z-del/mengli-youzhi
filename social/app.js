@@ -1262,7 +1262,7 @@ function renderPendingMusic() {
     return;
   }
   const lead = pendingMusic.previewUrl
-    ? `<button class="music-play" data-music-preview-button onclick="previewPendingMusic()" aria-label="试听音乐">▶</button>`
+    ? `<button class="music-play" data-music-preview-button onclick="previewPendingMusic()" aria-label="试听音乐">${MUSIC_ICONS.play}</button>`
     : `<span class="music-note">🎵</span>`;
   const sub = [
     pendingMusic.duration ? formatMusicDuration(pendingMusic.duration) : '',
@@ -1274,6 +1274,7 @@ function renderPendingMusic() {
       <div class="music-title">${escapeHtml(pendingMusic.title)}</div>
       <div class="music-duration">${escapeHtml(sub)}</div>
     </div>
+    <span class="music-eq" aria-hidden="true"><i></i><i></i><i></i></span>
     <div class="pending-music-actions">
       <button onclick="addMusic()">修改</button>
       <button onclick="removePendingMusic()">移除</button>
@@ -1339,11 +1340,28 @@ function ensureMusicAudio() {
   musicAudio.setAttribute('playsinline', '');
   musicAudio.addEventListener('play', syncMusicButtons);
   musicAudio.addEventListener('pause', syncMusicButtons);
+  musicAudio.addEventListener('timeupdate', updateMusicProgress);
   musicAudio.addEventListener('ended', () => {
     musicState.loading = false;
+    resetMusicProgress();
     syncMusicButtons();
   });
   return musicAudio;
+}
+
+// 播放进度：只更新当前播放那条的进度光带
+function updateMusicProgress() {
+  if (!musicAudio || musicState.kind !== 'post') return;
+  const total = musicAudio.duration;
+  const ratio = total > 0 ? Math.min(1, musicAudio.currentTime / total) : 0;
+  document.querySelectorAll(`[data-music-button="${musicState.id}"]`).forEach(btn => {
+    const bar = btn.closest('.music-bar');
+    if (bar) bar.style.setProperty('--music-progress', ratio.toFixed(4));
+  });
+}
+
+function resetMusicProgress() {
+  document.querySelectorAll('.music-bar').forEach(bar => bar.style.setProperty('--music-progress', 0));
 }
 
 function musicSources(url) {
@@ -1368,20 +1386,28 @@ function musicBarHtml(post) {
     </div>`;
   }
   return `<div class="music-bar" onclick="event.stopPropagation()">
-    <button class="music-play" data-music-button="${post.id}" onclick="event.stopPropagation();togglePostMusic('${post.id}')" aria-label="播放音乐">▶</button>
+    <button class="music-play" data-music-button="${post.id}" onclick="event.stopPropagation();togglePostMusic('${post.id}')" aria-label="播放音乐">${MUSIC_ICONS.play}</button>
     <div class="music-info">
       <div class="music-title">${escapeHtml(title)}</div>
       <div class="music-duration">${escapeHtml([artist, sub].filter(Boolean).join(' · '))}</div>
     </div>
+    <span class="music-eq" aria-hidden="true"><i></i><i></i><i></i></span>
   </div>`;
 }
+
+const MUSIC_ICONS = {
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5.2v13.6c0 .9.99 1.45 1.75.98l10.6-6.8a1.16 1.16 0 0 0 0-1.96L10.25 4.22a1.16 1.16 0 0 0-1.75.98z" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="5" width="3.6" height="14" rx="1.8" fill="currentColor"/><rect x="13.4" y="5" width="3.6" height="14" rx="1.8" fill="currentColor"/></svg>',
+  loading: '<span class="music-spin"></span>'
+};
 
 function syncMusicButtons() {
   const playing = !!(musicAudio && !musicAudio.paused && !musicAudio.ended);
   document.querySelectorAll('[data-music-button]').forEach(btn => {
     const active = musicState.kind === 'post' && btn.dataset.musicButton === musicState.id;
     const isPlaying = active && playing;
-    btn.textContent = active && musicState.loading ? '…' : (isPlaying ? '❚❚' : '▶');
+    btn.innerHTML = active && musicState.loading ? MUSIC_ICONS.loading : (isPlaying ? MUSIC_ICONS.pause : MUSIC_ICONS.play);
+    btn.classList.toggle('loading', active && musicState.loading);
     btn.classList.toggle('playing', isPlaying);
     btn.setAttribute('aria-label', isPlaying ? '暂停音乐' : '播放音乐');
     const bar = btn.closest('.music-bar');
@@ -1391,7 +1417,8 @@ function syncMusicButtons() {
   if (previewBtn) {
     const active = musicState.kind === 'preview';
     const isPlaying = active && playing;
-    previewBtn.textContent = active && musicState.loading ? '…' : (isPlaying ? '❚❚' : '▶');
+    previewBtn.innerHTML = active && musicState.loading ? MUSIC_ICONS.loading : (isPlaying ? MUSIC_ICONS.pause : MUSIC_ICONS.play);
+    previewBtn.classList.toggle('loading', active && musicState.loading);
     previewBtn.classList.toggle('playing', isPlaying);
     previewBtn.setAttribute('aria-label', isPlaying ? '暂停试听' : '试听音乐');
   }
@@ -1424,6 +1451,7 @@ function stopMusic() {
   musicState.sources = [];
   musicState.sourceIndex = 0;
   musicState.loading = false;
+  resetMusicProgress();
   syncMusicButtons();
 }
 
@@ -1436,6 +1464,7 @@ async function playMusic(kind, id, sources, restart) {
   if (changed || restart) {
     musicState.sources = sources;
     musicState.sourceIndex = 0;
+    resetMusicProgress();
   }
   musicState.kind = kind;
   musicState.id = id;
