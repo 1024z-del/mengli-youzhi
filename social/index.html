@@ -270,22 +270,6 @@
   </div>
 </div>
 
-<!-- 添加音乐弹窗 -->
-<div id="music-modal" class="detail-view" style="display:none;">
-  <div class="detail-card" style="max-width:400px;">
-    <h3>🎵 添加音乐</h3>
-    <p style="color:#888;font-size:13px;margin-top:6px;">选择本地音乐文件，发布时会一起上传，动态里可播放。</p>
-    <input type="text" id="music-title-input" placeholder="歌名" maxlength="100" style="margin-top:12px;">
-    <input type="text" id="music-artist-input" placeholder="歌手（可不填）" maxlength="100">
-    <button class="btn-secondary" onclick="pickMusicFile()" style="margin:0 0 8px;">📁 选择本地音乐文件</button>
-    <div id="music-file-hint" style="font-size:12px;color:#999;line-height:1.5;"></div>
-    <div style="display:flex;gap:8px;margin-top:14px;">
-      <button class="btn-secondary" onclick="closeMusicModal()" style="margin:0;flex:1;">取消</button>
-      <button class="btn-danger" onclick="confirmMusicInfo()" style="margin:0;flex:1;">确定</button>
-    </div>
-  </div>
-</div>
-
 <!-- 回收站弹窗 -->
 <div id="trash-modal" class="detail-view" style="display:none;">
   <div class="detail-card" style="max-width:420px;">
@@ -374,7 +358,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 92;
+const CURRENT_V = 93;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -402,6 +386,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=92"></script>
+<script src="app.js?v=93"></script>
 </body>
 </html>
