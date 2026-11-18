@@ -56,29 +56,47 @@ async function ghPutFile(path, data, sha) {
   return j.content.sha;
 }
 
-async function ghUploadMedia(name, base64) {
+// 上传超时或响应丢失后，确认文件是否其实已经写入成功
+async function ghMediaExists(path) {
+  try {
+    const r = await fetch(`${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}?ref=${GH.branch}&t=${Date.now()}`, { headers, cache: 'no-store' });
+    return r.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function ghUploadMedia(name, base64, options) {
   const safeName = String(name || 'file').replace(/[^\w.\-]+/g, '_');
   const path = `media/${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safeName}`;
+  const rawUrl = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/${path}`;
   const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}`;
   const bodyStr = JSON.stringify({
     message: `upload media`,
     content: base64,
     branch: GH.branch
   });
+  const timeoutMs = (options && options.timeout) || 120000;
   let lastErr = null;
-  // 大视频上传容易超时/冲突，最多重试 3 次
+  // 大视频/音乐上传容易超时/冲突，最多重试 3 次
   for (let attempt = 1; attempt <= 3; attempt++) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 120000);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     let fatal = null;
     try {
       const r = await fetch(url, { method: 'PUT', headers, body: bodyStr, signal: ctrl.signal });
-      if (r.ok) return `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/${path}`;
+      if (r.ok) return rawUrl;
+      // 409/422：上一次请求可能其实已写入成功（超时或响应丢失），文件已存在时直接复用
+      if ([409, 422].includes(r.status)) {
+        if (await ghMediaExists(path)) return rawUrl;
+      }
       const err = new Error(`上传失败 ${r.status}`);
       // 409/422/5xx 多为并发提交冲突或服务端临时问题，可以重试
       if ([409, 422, 500, 502, 503, 504].includes(r.status)) lastErr = err;
       else fatal = err;
     } catch (e) {
+      // 网络中断或超时后服务端可能已完成写入，先确认再重试
+      if (await ghMediaExists(path)) return rawUrl;
       lastErr = (e && e.name === 'AbortError') ? new Error('上传超时，请检查网络后重试') : e;
     } finally {
       clearTimeout(timer);
@@ -2005,7 +2023,7 @@ async function publishPost() {
       if (!music) return null;
       showUploadProgress(`上传中 ${done}/${total}：音乐...`);
       // 已上传成功但动态发布失败时，重试直接复用 URL
-      if (!music.url) music.url = await ghUploadMedia(music.name, music.data);
+      if (!music.url) music.url = await ghUploadMedia(music.name, music.data, { timeout: 300000 });
       done++;
       showUploadProgress(`上传中 ${done}/${total}...`);
       return { url: music.url, title: music.title, duration: music.duration };
