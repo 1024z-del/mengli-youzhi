@@ -105,6 +105,10 @@ function mediaPagesUrl(u) {
   const rel = mediaRelPath(u);
   return rel ? MEDIA_PAGES_PREFIX + rel : u;
 }
+function mediaCdnUrl(u) {
+  const rel = mediaRelPath(u);
+  return rel ? MEDIA_CDN_PREFIX + rel : u;
+}
 function mediaFallbackAttr(rawUrl) {
   const rel = mediaRelPath(rawUrl);
   if (!rel) return '';
@@ -559,15 +563,46 @@ async function deleteSelected() {
   })();
 }
 
+function feedCacheKey() {
+  return 'mlyz_feed_cache_' + currentUser.id;
+}
+
+// 打开时先显示上次动态，网络请求在后台更新，不再白屏等待
+function renderCachedFeed() {
+  if (!currentUser) return;
+  try {
+    const posts = JSON.parse(localStorage.getItem(feedCacheKey()) || 'null');
+    if (!Array.isArray(posts) || !posts.length) return;
+    allPostsCache = posts;
+    const visible = posts.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    renderFeed(visible);
+  } catch (e) { /* 缓存损坏时直接走网络 */ }
+}
+
+function saveFeedCache(visiblePosts) {
+  if (!currentUser) return;
+  try {
+    localStorage.setItem(feedCacheKey(), JSON.stringify(visiblePosts.slice(0, 100)));
+  } catch (e) { /* 存储空间不足不影响使用 */ }
+}
+
 async function loadPosts() {
   if (!currentUser) return;
-  await loadFriendships();
-  const { content: posts, sha } = await ghGetFile('data/posts.json');
-  allPostsCache = posts || [];
-  postsShaCache = sha;
-  const visible = (posts || []).filter(p => canViewPost(p, currentUser.id));
-  visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  renderFeed(visible);
+  try {
+    const [{ content: posts, sha }] = await Promise.all([
+      ghGetFile('data/posts.json'),
+      loadFriendships()
+    ]);
+    allPostsCache = posts || [];
+    postsShaCache = sha;
+    const visible = (posts || []).filter(p => canViewPost(p, currentUser.id));
+    visible.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    renderFeed(visible);
+    saveFeedCache(visible);
+  } catch (e) {
+    // 已显示的缓存继续保留，避免因一次网络失败清空动态
+    console.error('动态加载失败', e);
+  }
 }
 
 let lastFeedSig = '';
@@ -631,7 +666,7 @@ function renderFeed(posts) {
 function getAvatarHtml(name, avatarUrl, userId) {
   let inner;
   if (avatarUrl) {
-    inner = `<img src="${avatarUrl}" data-zoom="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;cursor:zoom-in;">`;
+    inner = `<img src="${mediaCdnUrl(avatarUrl)}"${imgFallbackAttr(avatarUrl)} decoding="async" data-zoom="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;cursor:zoom-in;">`;
   } else {
     // 默认头像：昵称首字 + 渐变背景
     const initial = (name || '?').charAt(0).toUpperCase();
@@ -1042,7 +1077,7 @@ function renderUserPage(userId, user, posts) {
     ? `background-image:url('${mediaPagesUrl(cover)}');background-size:cover;background-position:center;`
     : 'background:linear-gradient(135deg,#a78bfa,#7c3aed);';
   const avatarHtml = (user && user.avatar)
-    ? `<img src="${user.avatar}" data-zoom="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;cursor:zoom-in;">`
+    ? `<img src="${mediaCdnUrl(user.avatar)}"${imgFallbackAttr(user.avatar)} decoding="async" data-zoom="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;cursor:zoom-in;">`
     : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;background:#a78bfa;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>`;
 
   document.getElementById('user-page-content').innerHTML = `
@@ -1433,12 +1468,45 @@ function gcj2wgs(lat, lng) {
   return { lat: lat * 2 - g.lat, lng: lng * 2 - g.lng };
 }
 
-function openLocationModal() {
+let leafletLoader = null;
+function ensureLeaflet() {
+  if (typeof L !== 'undefined') return Promise.resolve();
+  if (leafletLoader) return leafletLoader;
+  const css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  const cssReady = new Promise((resolve, reject) => {
+    css.onload = resolve;
+    css.onerror = () => reject(new Error('地图样式加载失败'));
+  });
+  document.head.appendChild(css);
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  const jsReady = new Promise((resolve, reject) => {
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('地图加载失败'));
+  });
+  document.head.appendChild(script);
+  leafletLoader = Promise.all([cssReady, jsReady]).catch(e => {
+    leafletLoader = null;
+    throw e;
+  });
+  return leafletLoader;
+}
+
+async function openLocationModal() {
   document.getElementById('location-modal').style.display = 'flex';
   openOverlay('location-modal');
   document.getElementById('location-results').innerHTML = '';
   const base = pickedLocation || { lat: 30.2741, lng: 120.1551 };
-  setTimeout(() => initLocMap(base.lat, base.lng, !!pickedLocation), 120);
+  try {
+    await ensureLeaflet();
+    if (document.getElementById('location-modal').style.display !== 'flex') return;
+    initLocMap(base.lat, base.lng, !!pickedLocation);
+  } catch (e) {
+    // 地图不可用时仍可通过上方搜索选择位置
+    document.getElementById('loc-map').style.display = 'none';
+  }
 }
 function closeLocationModal() {
   closeOverlay('location-modal');
@@ -1866,7 +1934,7 @@ async function loadSettings() {
     // 个人信息预览
     const avatarEl = document.getElementById('profile-avatar-preview');
     if (avatarEl) {
-      avatarEl.src = currentUser.avatar || getAvatarUrl(currentUser.username);
+      setAvatarPreview(avatarEl, currentUser.avatar, currentUser.username);
       if (currentUser.avatar) avatarEl.setAttribute('data-zoom', currentUser.avatar);
       else avatarEl.removeAttribute('data-zoom');
     }
@@ -1875,6 +1943,19 @@ async function loadSettings() {
     const emailEl = document.getElementById('profile-email-preview');
     if (emailEl) emailEl.textContent = currentUser.email || '';
   }
+}
+
+function setAvatarPreview(el, avatarUrl, name) {
+  el.onerror = null;
+  if (!avatarUrl) {
+    el.src = getAvatarUrl(name);
+    return;
+  }
+  el.onerror = () => {
+    el.onerror = null;
+    el.src = mediaPagesUrl(avatarUrl);
+  };
+  el.src = mediaCdnUrl(avatarUrl);
 }
 
 // 生成默认头像 URL（首字母）
@@ -2212,7 +2293,7 @@ function openProfileModal() {
   pendingAvatar = null;
   pendingCover = null;
   const avatarEdit = document.getElementById('profile-avatar-edit');
-  avatarEdit.src = currentUser.avatar || getAvatarUrl(currentUser.username);
+  setAvatarPreview(avatarEdit, currentUser.avatar, currentUser.username);
   // 封面预览
   const coverEdit = document.getElementById('profile-cover-edit');
   if (coverEdit) {
@@ -2629,9 +2710,9 @@ function showAuth() {
 function showApp() {
   document.getElementById('auth-page').style.display = 'none';
   document.getElementById('main-app').style.display = 'block';
+  renderCachedFeed();
   switchTab('feed');
   loadUsersCache();
-  loadPosts();
   loadNotifications();
   cleanupOldTrash();
   startPolling();
@@ -2679,6 +2760,7 @@ function startPolling() {
         if (sig !== lastFeedSig) {
           lastFeedSig = sig;
           renderFeed(visible);
+          saveFeedCache(visible);
         }
       }
     } catch (e) { /* 静默 */ }
