@@ -796,3 +796,12 @@ textarea:focus { border-color: #6c5ce7; }
   font-size: 11px;
   cursor: pointer;
 }
+
+/* 弹窗打开时暂停背景动画：iOS 上合成开销大，暂停后弹窗打开明显更跟手 */
+body.has-overlay::before,
+body.has-overlay::after,
+html.has-overlay::before,
+html.has-overlay::after,
+html.has-overlay .dream-title {
+  animation-play-state: paused !important;
+}

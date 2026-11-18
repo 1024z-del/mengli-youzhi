@@ -241,7 +241,15 @@ function openOverlay(id) {
   if (el) el.style.zIndex = 100 + overlayStack.length;
   // 锁定页面滚动，避免滑动弹窗时把后面的列表带动
   document.body.style.overflow = 'hidden';
+  syncOverlayClass();
   history.pushState({ overlay: id }, '');
+}
+
+// 弹窗打开时暂停背景动画，iOS 上合成负担小很多，打开更快
+function syncOverlayClass() {
+  const on = overlayStack.length > 0;
+  document.body.classList.toggle('has-overlay', on);
+  document.documentElement.classList.toggle('has-overlay', on);
 }
 function closeOverlay(id) {
   const idx = overlayStack.lastIndexOf(id);
@@ -256,6 +264,7 @@ function closeOverlay(id) {
   } else {
     document.getElementById(id).style.display = 'none';
   }
+  syncOverlayClass();
 }
 window.addEventListener('popstate', (e) => {
   if (overlayStack.length) {
@@ -279,6 +288,7 @@ window.addEventListener('popstate', (e) => {
       // 弹窗全部关闭，恢复页面滚动
       document.body.style.overflow = '';
     }
+    syncOverlayClass();
   }
   // 如果有关闭后要打开的日记，现在打开
   if (pendingOpenPost) {
@@ -1018,7 +1028,7 @@ function renderUserPage(userId, user, posts) {
   const cover = user ? user.cover : null;
   const isMe = userId === currentUser.id;
   const coverStyle = cover
-    ? `background-image:url('${cover}');background-size:cover;background-position:center;`
+    ? `background-image:url('${mediaPagesUrl(cover)}');background-size:cover;background-position:center;`
     : 'background:linear-gradient(135deg,#a78bfa,#7c3aed);';
   const avatarHtml = (user && user.avatar)
     ? `<img src="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;">`
@@ -2194,7 +2204,7 @@ function openProfileModal() {
   const coverEdit = document.getElementById('profile-cover-edit');
   if (coverEdit) {
     if (currentUser.cover) {
-      coverEdit.style.backgroundImage = `url('${currentUser.cover}')`;
+      coverEdit.style.backgroundImage = `url('${mediaPagesUrl(currentUser.cover)}')`;
       coverEdit.textContent = '';
     } else {
       coverEdit.style.backgroundImage = '';
@@ -2230,20 +2240,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 主页背景图上传（不做裁剪，直接预览）
+  // 主页背景图上传（先裁剪再上传）
   const coverInput = document.getElementById('cover-input');
   if (coverInput) {
     coverInput.addEventListener('change', e => {
       const file = e.target.files[0];
+      e.target.value = '';
       if (!file) return;
       const reader = new FileReader();
       reader.onload = evt => {
-        pendingCover = evt.target.result;
-        const coverEdit = document.getElementById('profile-cover-edit');
-        if (coverEdit) {
-          coverEdit.style.backgroundImage = `url('${evt.target.result}')`;
-          coverEdit.textContent = '';
-        }
+        const img = new Image();
+        img.onload = () => openCoverCropper(img);
+        img.src = evt.target.result;
       };
       reader.readAsDataURL(file);
     });
@@ -2369,6 +2377,142 @@ function closeCropper() {
   closeOverlay('cropper-modal');
 }
 
+// ---- 主页背景图裁剪（输出 1400×824，比例约 1.7:1）----
+let coverCropImg = null;
+const COVER_FRAME_W = 320;
+const COVER_FRAME_H = 188;
+let coverCropState = { scale: 1, min: 1, x: 0, y: 0 };
+
+function openCoverCropper(img) {
+  coverCropImg = img;
+  const canvas = document.getElementById('cover-cropper-canvas');
+  canvas.width = COVER_FRAME_W;
+  canvas.height = COVER_FRAME_H;
+  const min = Math.max(COVER_FRAME_W / img.width, COVER_FRAME_H / img.height);
+  coverCropState = {
+    scale: min,
+    min,
+    x: (COVER_FRAME_W - img.width * min) / 2,
+    y: (COVER_FRAME_H - img.height * min) / 2
+  };
+  const slider = document.getElementById('cover-zoom-slider');
+  if (slider) {
+    slider.min = min;
+    slider.max = min * 4;
+    slider.step = min / 200;
+    slider.value = min;
+  }
+  bindCoverCropper();
+  drawCoverCropper();
+  document.getElementById('cover-cropper-modal').style.display = 'flex';
+  openOverlay('cover-cropper-modal');
+}
+
+function bindCoverCropper() {
+  const box = document.getElementById('cover-cropper-container');
+  if (!box || box.dataset.bound) return;
+  box.dataset.bound = '1';
+  let sx = 0, sy = 0, spx = 0, spy = 0, sdist = 0, sscale = 1;
+  const start = e => {
+    if (e.touches && e.touches.length === 2) {
+      sdist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      sscale = coverCropState.scale;
+    } else {
+      const t = e.touches ? e.touches[0] : e;
+      sx = t.clientX; sy = t.clientY;
+      spx = coverCropState.x; spy = coverCropState.y;
+    }
+  };
+  const move = e => {
+    if (e.touches && e.touches.length === 2 && sdist) {
+      const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      setCoverScale(sscale * (dist / sdist));
+    } else {
+      const t = e.touches ? e.touches[0] : e;
+      coverCropState.x = spx + (t.clientX - sx);
+      coverCropState.y = spy + (t.clientY - sy);
+      clampCover();
+      drawCoverCropper();
+    }
+    e.preventDefault();
+  };
+  box.addEventListener('mousedown', start);
+  box.addEventListener('touchstart', start, { passive: false });
+  box.addEventListener('mousemove', e => { if (e.buttons) move(e); });
+  box.addEventListener('touchmove', move, { passive: false });
+}
+
+function clampCover() {
+  if (!coverCropImg) return;
+  const w = coverCropImg.width * coverCropState.scale;
+  const h = coverCropImg.height * coverCropState.scale;
+  coverCropState.x = Math.min(0, Math.max(COVER_FRAME_W - w, coverCropState.x));
+  coverCropState.y = Math.min(0, Math.max(COVER_FRAME_H - h, coverCropState.y));
+}
+
+function setCoverScale(s) {
+  s = Math.max(coverCropState.min, Math.min(coverCropState.min * 4, s));
+  const cx = COVER_FRAME_W / 2;
+  const cy = COVER_FRAME_H / 2;
+  const k = s / coverCropState.scale;
+  coverCropState.x = cx - (cx - coverCropState.x) * k;
+  coverCropState.y = cy - (cy - coverCropState.y) * k;
+  coverCropState.scale = s;
+  clampCover();
+  const slider = document.getElementById('cover-zoom-slider');
+  if (slider) slider.value = s;
+  drawCoverCropper();
+}
+
+function coverZoomBy(delta) {
+  setCoverScale(coverCropState.scale + coverCropState.min * delta);
+}
+
+function coverZoomSlider(val) {
+  setCoverScale(parseFloat(val));
+}
+
+function drawCoverCropper() {
+  const canvas = document.getElementById('cover-cropper-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, COVER_FRAME_W, COVER_FRAME_H);
+  if (!coverCropImg) return;
+  const s = coverCropState.scale;
+  ctx.drawImage(coverCropImg, coverCropState.x, coverCropState.y, coverCropImg.width * s, coverCropImg.height * s);
+}
+
+function confirmCoverCrop() {
+  if (!coverCropImg) return;
+  const outW = 1400;
+  const outH = Math.round(outW * COVER_FRAME_H / COVER_FRAME_W);
+  const out = document.createElement('canvas');
+  out.width = outW;
+  out.height = outH;
+  const r = outW / COVER_FRAME_W;
+  const s = coverCropState.scale;
+  out.getContext('2d').drawImage(
+    coverCropImg,
+    coverCropState.x * r,
+    coverCropState.y * r,
+    coverCropImg.width * s * r,
+    coverCropImg.height * s * r
+  );
+  const dataUrl = out.toDataURL('image/jpeg', 0.8);
+  pendingCover = dataUrl.split(',')[1];
+  const coverEdit = document.getElementById('profile-cover-edit');
+  if (coverEdit) {
+    coverEdit.style.backgroundImage = `url('${dataUrl}')`;
+    coverEdit.textContent = '';
+  }
+  closeCoverCropper();
+}
+
+function closeCoverCropper() {
+  coverCropImg = null;
+  closeOverlay('cover-cropper-modal');
+}
+
 async function saveProfile() {
   const newUsername = document.getElementById('edit-username').value.trim();
   const newEmail = document.getElementById('edit-email').value.trim();
@@ -2393,7 +2537,12 @@ async function saveProfile() {
     // 上传主页背景图
     let coverUrl = currentUser.cover;
     if (pendingCover) {
-      coverUrl = await ghUploadMedia('cover.jpg', pendingCover);
+      showUploadProgress('正在上传主页背景图...');
+      try {
+        coverUrl = await ghUploadMedia('cover.jpg', pendingCover);
+      } finally {
+        hideUploadProgress();
+      }
     }
 
     // 更新用户信息
@@ -2452,7 +2601,8 @@ async function saveProfile() {
     loadSettings();
     showToast('✅ 个人信息已更新');
   } catch (e) {
-    alert('保存失败：' + e.message);
+    hideUploadProgress();
+    alert('保存失败：' + (e && e.message ? e.message : e));
     console.error(e);
   }
 }
