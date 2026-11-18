@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=42">
+  <link rel="stylesheet" href="style.css?v=43">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -107,10 +107,14 @@
           <button class="action-btn" onclick="addImage()">📷 图片</button>
           <button class="action-btn" onclick="addVideo(false)">🎬 视频</button>
           <button class="action-btn" onclick="addVideo(true)">🫧 实况</button>
+          <button class="action-btn" onclick="addMusic()">🎵 音乐</button>
         </div>
+        <div id="music-preview" class="pending-music"></div>
+        <p style="font-size:12px;color:#999;margin:4px 0 8px;">音乐：从 iPhone「文件」选择 MP3 / M4A / AAC / WAV，单首不超过 15MB、10 分钟。Apple Music、网易云等加密下载歌曲及 M4P / DRM 文件不能导入。</p>
         <p style="font-size:12px;color:#999;margin:4px 0 8px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」。图片/视频都支持一次多选多个。视频会自动压缩后再上传，速度更快。</p>
         <input type="file" id="img-input" accept="image/*" multiple style="display:none;">
         <input type="file" id="video-input" accept="video/*" multiple style="display:none;">
+        <input type="file" id="music-input" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,.mp3,.m4a,.aac,.wav" style="display:none;">
 
         <button class="primary-btn publish-btn" onclick="publishPost()">✨ 发布日记</button>
       </div>
@@ -354,7 +358,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 88;
+const CURRENT_V = 89;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -382,6 +386,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=88"></script>
+<script src="app.js?v=89"></script>
 </body>
 </html>

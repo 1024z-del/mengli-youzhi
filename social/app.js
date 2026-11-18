@@ -354,6 +354,7 @@ function setUser(u) {
 
 function logout() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  stopMusic();
   currentUser = null;
   localStorage.removeItem('mlyz_user');
   showAuth();
@@ -530,6 +531,7 @@ async function deleteSelected() {
   if (!confirm(`确定删除选中的 ${selectedPostIds.size} 篇日记吗？\n（删除后会在云端回收站保留 30 天）`)) return;
 
   const ids = new Set(selectedPostIds);
+  if (musicState.kind === 'post' && ids.has(musicState.id)) stopMusic();
   const toDelete = allPostsCache.filter(p => ids.has(p.id));
 
   // 立即更新界面，不等待网络
@@ -648,6 +650,7 @@ function renderFeed(posts) {
         </div>
       </div>
       ${mediaListHtml(p, 'post')}
+      ${musicBarHtml(p)}
       <p class="post-text">${escapeHtml(p.text)}</p>
       ${p.location ? `<div class="post-loc">📍 ${escapeHtml(locText(p.location))}</div>` : ''}
       <div class="post-time">${formatTime(p.createdAt)}</div>
@@ -661,6 +664,7 @@ function renderFeed(posts) {
       </div>
     </div>
   `;}).join('');
+  syncMusicButtons();
 }
 
 function getAvatarHtml(name, avatarUrl, userId) {
@@ -811,6 +815,7 @@ function renderPostDetail(id) {
       </div>
     </div>
     ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
+    ${musicBarHtml(post)}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     ${post.location ? `<div class="post-loc">📍 ${escapeHtml(locText(post.location))}${post.authorId === currentUser.id ? ` <button class="loc-clear" onclick="removePostLocation('${post.id}')">清除位置</button>` : ''}</div>` : ''}
     <div class="post-time">${formatTime(post.createdAt)}</div>
@@ -850,6 +855,7 @@ function renderPostDetail(id) {
     </div>
     <button onclick="closeDetail()" class="btn-secondary">返回</button>
   `;
+  syncMusicButtons();
 }
 
 // ---- 评论（乐观更新） ----
@@ -1094,6 +1100,7 @@ function renderUserPage(userId, user, posts) {
         ${posts.length ? posts.map(p => `
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
             ${mediaListHtml(p, 'post')}
+            ${musicBarHtml(p)}
             <p class="post-text">${escapeHtml(p.text)}</p>
             <div class="post-time">${formatTime(p.createdAt)}</div>
           </div>
@@ -1102,6 +1109,7 @@ function renderUserPage(userId, user, posts) {
       <button onclick="closeUserPage()" class="btn-secondary" style="margin-top:12px;">返回</button>
     </div>
   `;
+  syncMusicButtons();
 }
 
 function closeUserPage() {
@@ -1186,6 +1194,285 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+
+// ---- 本地音乐导入与全局单播放器 ----
+let pendingMusic = null; // { name, title, data, mime, duration, previewUrl, url }
+let musicAudio = null;
+let musicPlayOp = 0;
+const musicState = { kind: null, id: null, sources: [], sourceIndex: 0, loading: false };
+
+function formatMusicDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function readAudioDuration(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    let finished = false;
+    const timer = setTimeout(() => finish(new Error('音乐读取超时，请换一首试试')), 20000);
+    function finish(err) {
+      if (finished) return;
+      finished = true;
+      const duration = audio.duration;
+      clearTimeout(timer);
+      audio.onloadeddata = null;
+      audio.onerror = null;
+      audio.removeAttribute('src');
+      audio.load();
+      URL.revokeObjectURL(url);
+      if (err) reject(err);
+      else if (!Number.isFinite(duration) || duration <= 0) reject(new Error('无法读取音乐时长'));
+      else resolve(duration);
+    }
+    audio.preload = 'auto';
+    // loadeddata 表示首帧已真正解码，能拦截损坏或加密音频
+    audio.onloadeddata = () => finish();
+    audio.onerror = () => finish(new Error('无法解码这首音乐，加密 / DRM 或不支持的音频无法导入'));
+    audio.src = url;
+    audio.load();
+  });
+}
+
+function renderPendingMusic() {
+  const box = document.getElementById('music-preview');
+  if (!box) return;
+  if (!pendingMusic) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `<div class="music-bar pending-music-bar">
+    <button class="music-play" data-music-preview-button onclick="previewPendingMusic()" aria-label="试听音乐">▶</button>
+    <span class="music-note">🎵</span>
+    <div class="music-info">
+      <div class="music-title">${escapeHtml(pendingMusic.title)}</div>
+      <div class="music-duration">${formatMusicDuration(pendingMusic.duration)}${pendingMusic.url ? ' · 已上传' : ''}</div>
+    </div>
+    <div class="pending-music-actions">
+      <button onclick="addMusic()">更换</button>
+      <button onclick="removePendingMusic()">移除</button>
+    </div>
+  </div>`;
+  syncMusicButtons();
+}
+
+function clearPendingMusic() {
+  if (musicState.kind === 'preview') stopMusic();
+  if (pendingMusic && pendingMusic.previewUrl) URL.revokeObjectURL(pendingMusic.previewUrl);
+  pendingMusic = null;
+  renderPendingMusic();
+}
+
+function removePendingMusic() {
+  clearPendingMusic();
+}
+
+function addMusic() {
+  const input = document.getElementById('music-input');
+  input.value = '';
+  input.onchange = async e => {
+    const file = (e.target.files || [])[0];
+    if (!file) return;
+    try {
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const allowedExt = ['mp3', 'm4a', 'aac', 'wav'];
+      const allowedMime = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/wav', 'audio/x-wav'];
+      if (ext === 'm4p' || (!allowedExt.includes(ext) && !allowedMime.includes(file.type))) {
+        throw new Error('请选择 MP3、M4A、AAC 或 WAV 音乐，M4P / DRM 加密歌曲不能导入');
+      }
+      if (file.size > 15 * 1024 * 1024) throw new Error('音乐不能超过 15MB');
+      showToast('正在校验音乐...');
+      const duration = await readAudioDuration(file);
+      if (duration > 600) throw new Error('音乐不能超过 10 分钟');
+      const data = await fileToBase64(file);
+      clearPendingMusic();
+      pendingMusic = {
+        name: file.name || 'music',
+        title: (file.name || '未命名音乐').replace(/\.[^.]+$/, '') || '未命名音乐',
+        data,
+        mime: file.type || 'audio/mpeg',
+        duration,
+        previewUrl: URL.createObjectURL(file),
+        url: null
+      };
+      renderPendingMusic();
+      showToast('✅ 音乐已添加，可先试听');
+    } catch (err) {
+      alert(err.message || '音乐读取失败，请换一首试试');
+    } finally {
+      input.value = '';
+    }
+  };
+  input.click();
+}
+
+function ensureMusicAudio() {
+  if (musicAudio) return musicAudio;
+  musicAudio = new Audio();
+  musicAudio.preload = 'none';
+  musicAudio.playsInline = true;
+  musicAudio.setAttribute('playsinline', '');
+  musicAudio.addEventListener('play', syncMusicButtons);
+  musicAudio.addEventListener('pause', syncMusicButtons);
+  musicAudio.addEventListener('ended', () => {
+    musicState.loading = false;
+    syncMusicButtons();
+  });
+  return musicAudio;
+}
+
+function musicSources(url) {
+  const rel = mediaRelPath(url);
+  return rel ? [MEDIA_CDN_PREFIX + rel, MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [url];
+}
+
+function musicBarHtml(post) {
+  if (!post.music || typeof post.music.url !== 'string' || !post.music.url) return '';
+  const title = typeof post.music.title === 'string' && post.music.title ? post.music.title : '未命名音乐';
+  return `<div class="music-bar" onclick="event.stopPropagation()">
+    <button class="music-play" data-music-button="${post.id}" onclick="event.stopPropagation();togglePostMusic('${post.id}')" aria-label="播放音乐">▶</button>
+    <span class="music-note">🎵</span>
+    <div class="music-info">
+      <div class="music-title">${escapeHtml(title)}</div>
+      <div class="music-duration">${formatMusicDuration(post.music.duration)}</div>
+    </div>
+  </div>`;
+}
+
+function syncMusicButtons() {
+  const playing = !!(musicAudio && !musicAudio.paused && !musicAudio.ended);
+  document.querySelectorAll('[data-music-button]').forEach(btn => {
+    const active = musicState.kind === 'post' && btn.dataset.musicButton === musicState.id;
+    const isPlaying = active && playing;
+    btn.textContent = active && musicState.loading ? '…' : (isPlaying ? '❚❚' : '▶');
+    btn.classList.toggle('playing', isPlaying);
+    btn.setAttribute('aria-label', isPlaying ? '暂停音乐' : '播放音乐');
+    const bar = btn.closest('.music-bar');
+    if (bar) bar.classList.toggle('playing', isPlaying);
+  });
+  const previewBtn = document.querySelector('[data-music-preview-button]');
+  if (previewBtn) {
+    const active = musicState.kind === 'preview';
+    const isPlaying = active && playing;
+    previewBtn.textContent = active && musicState.loading ? '…' : (isPlaying ? '❚❚' : '▶');
+    previewBtn.classList.toggle('playing', isPlaying);
+    previewBtn.setAttribute('aria-label', isPlaying ? '暂停试听' : '试听音乐');
+  }
+}
+
+function pausePageVideos() {
+  document.querySelectorAll('video').forEach(v => {
+    try { v.pause(); } catch (e) {}
+  });
+}
+
+function pauseMusic() {
+  musicPlayOp++;
+  if (musicAudio) musicAudio.pause();
+  musicState.loading = false;
+  syncMusicButtons();
+}
+
+function stopMusic() {
+  musicPlayOp++;
+  if (musicAudio) {
+    try {
+      musicAudio.pause();
+      musicAudio.removeAttribute('src');
+      musicAudio.load();
+    } catch (e) {}
+  }
+  musicState.kind = null;
+  musicState.id = null;
+  musicState.sources = [];
+  musicState.sourceIndex = 0;
+  musicState.loading = false;
+  syncMusicButtons();
+}
+
+async function playMusic(kind, id, sources, restart) {
+  if (!sources.length || !sources[0]) return;
+  const audio = ensureMusicAudio();
+  const changed = musicState.kind !== kind || musicState.id !== id;
+  const op = ++musicPlayOp;
+  audio.pause();
+  if (changed || restart) {
+    musicState.sources = sources;
+    musicState.sourceIndex = 0;
+  }
+  musicState.kind = kind;
+  musicState.id = id;
+  musicState.loading = true;
+  pausePageVideos();
+  syncMusicButtons();
+
+  const start = (changed || restart) ? 0 : musicState.sourceIndex;
+  for (let i = start; i < musicState.sources.length; i++) {
+    if (op !== musicPlayOp) return;
+    musicState.sourceIndex = i;
+    const src = musicState.sources[i];
+    try {
+      if (changed || restart || audio.src !== src) {
+        audio.src = src;
+        audio.load();
+      } else if (audio.ended) {
+        audio.currentTime = 0;
+      }
+      await audio.play();
+      if (op !== musicPlayOp) return;
+      musicState.loading = false;
+      syncMusicButtons();
+      return;
+    } catch (err) {
+      if (op !== musicPlayOp) return;
+      if (err && err.name === 'AbortError') {
+        musicState.loading = false;
+        syncMusicButtons();
+        return;
+      }
+      if (err && err.name === 'NotAllowedError') {
+        musicState.loading = false;
+        syncMusicButtons();
+        showToast('请再点一次播放');
+        return;
+      }
+      // 当前线路不可用时继续尝试下一线路
+    }
+  }
+  if (op === musicPlayOp) {
+    stopMusic();
+    showToast('音乐加载失败，请稍后重试');
+  }
+}
+
+function togglePostMusic(postId) {
+  const post = allPostsCache.find(p => p.id === postId);
+  if (!post || !post.music || !post.music.url) return;
+  if (musicState.kind === 'post' && musicState.id === postId) {
+    if (musicState.loading) { stopMusic(); return; }
+    if (musicAudio && !musicAudio.paused && !musicAudio.ended) { pauseMusic(); return; }
+    playMusic('post', postId, musicState.sources, false);
+    return;
+  }
+  playMusic('post', postId, musicSources(post.music.url), true);
+}
+
+function previewPendingMusic() {
+  if (!pendingMusic) return;
+  if (musicState.kind === 'preview') {
+    if (musicState.loading) { stopMusic(); return; }
+    if (musicAudio && !musicAudio.paused && !musicAudio.ended) { pauseMusic(); return; }
+    playMusic('preview', 'pending', musicState.sources, false);
+    return;
+  }
+  playMusic('preview', 'pending', [pendingMusic.previewUrl], true);
+}
+
+// 视频开始发声时暂停音乐；音乐开始播放前也会暂停所有视频
+document.addEventListener('play', e => {
+  if (e.target && e.target.tagName === 'VIDEO' && musicAudio && (musicState.loading || !musicAudio.paused)) pauseMusic();
+}, true);
 
 // 截取视频首帧，生成缩略图（解决编辑页视频显示为黑色）
 function makeVideoThumb(file) {
@@ -1684,22 +1971,23 @@ function clearLocation() {
 async function publishPost() {
   const text = document.getElementById('post-text').value.trim();
   const visibility = document.getElementById('visibility').value;
+  const music = pendingMusic;
 
-  if (!text && !pendingMedia.length) {
-    alert('请输入内容或添加图片/视频');
+  if (!text && !pendingMedia.length && !music) {
+    alert('请输入内容或添加图片/视频/音乐');
     return;
   }
 
   try {
-    const total = pendingMedia.length;
+    const total = pendingMedia.length + (music ? 1 : 0);
     let done = 0;
     showUploadProgress(total ? `上传中 0/${total}...` : '发布中...');
 
     // 2 个并发上传（兼顾速度与 GitHub 提交冲突），封面图与视频同时上传
-    const uploaded = new Array(total);
+    const uploaded = new Array(pendingMedia.length);
     let nextIndex = 0;
     const uploadWorker = async () => {
-      while (nextIndex < total) {
+      while (nextIndex < pendingMedia.length) {
         const i = nextIndex++;
         const m = pendingMedia[i];
         const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
@@ -1713,7 +2001,17 @@ async function publishPost() {
         showUploadProgress(`上传中 ${done}/${total}...`);
       }
     };
-    await Promise.all([uploadWorker(), uploadWorker()]);
+    const musicTask = (async () => {
+      if (!music) return null;
+      showUploadProgress(`上传中 ${done}/${total}：音乐...`);
+      // 已上传成功但动态发布失败时，重试直接复用 URL
+      if (!music.url) music.url = await ghUploadMedia(music.name, music.data);
+      done++;
+      showUploadProgress(`上传中 ${done}/${total}...`);
+      return { url: music.url, title: music.title, duration: music.duration };
+    })();
+    const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask]);
+    const uploadedMusic = results[2];
 
     const media = uploaded.map((u, i) => {
       const m = pendingMedia[i];
@@ -1735,6 +2033,7 @@ async function publishPost() {
       authorAvatar: currentUser.avatar || null,
       text,
       media,
+      music: uploadedMusic,
       image: (media.find(m => m.type === 'image') || {}).url || null,
       video: (media.find(m => m.type === 'video') || {}).url || null,
       visibility,
@@ -1759,6 +2058,7 @@ async function publishPost() {
     // Reset form
     pendingMedia = [];
     renderPendingMedia();
+    clearPendingMusic();
     document.getElementById('post-text').value = '';
     document.getElementById('visibility').value = 'private';
     clearLocation();
@@ -1769,6 +2069,7 @@ async function publishPost() {
     loadPosts();
   } catch (e) {
     hideUploadProgress();
+    renderPendingMusic();
     alert('发布失败：' + e.message);
     console.error(e);
   }
@@ -2119,6 +2420,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+function normalizeImportedMusic(music) {
+  if (!music || typeof music.url !== 'string' || music.url.indexOf(MEDIA_RAW_PREFIX) !== 0 || typeof music.title !== 'string') return null;
+  const duration = Number(music.duration);
+  return {
+    url: music.url,
+    title: music.title.slice(0, 200),
+    duration: Number.isFinite(duration) && duration > 0 && duration <= 600 ? duration : 0
+  };
+}
+
 async function doImport() {
   if (!importData) {
     alert('请先选择备份文件');
@@ -2133,7 +2444,8 @@ async function doImport() {
     authorId: currentUser.id,
     authorName: currentUser.username,
     authorAvatar: currentUser.avatar || null,
-    createdAt: p.createdAt || new Date().toISOString()
+    createdAt: p.createdAt || new Date().toISOString(),
+    music: normalizeImportedMusic(p.music)
   }));
   // 乐观更新本地缓存
   allPostsCache = [...allPostsCache, ...newPosts];
@@ -2788,6 +3100,10 @@ document.addEventListener('visibilitychange', () => {
 });
 
 function switchTab(tab) {
+  const activeTab = document.querySelector('.tab-btn.active');
+  const previousTab = activeTab ? activeTab.dataset.tab : null;
+  if (tab !== 'feed' && musicState.kind === 'post') pauseMusic();
+  if (previousTab === 'publish' && tab !== 'publish' && musicState.kind === 'preview') stopMusic();
   document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
   document.getElementById('tab-' + tab).style.display = 'block';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));

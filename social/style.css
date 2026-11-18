@@ -337,6 +337,63 @@ textarea:focus { border-color: #6c5ce7; }
   font-weight: 500;
 }
 .action-btn:active { background: rgba(255, 255, 255, 0.6); }
+.action-row .action-btn { min-width: 0; padding-left: 6px; padding-right: 6px; }
+
+/* 动态配乐与发布前试听 */
+.pending-music:empty { display: none; }
+.music-bar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid rgba(108, 92, 231, 0.13);
+  border-radius: 14px;
+  background: rgba(108, 92, 231, 0.08);
+  cursor: default;
+  transition: background 0.2s, border-color 0.2s;
+}
+.music-bar.playing {
+  background: rgba(108, 92, 231, 0.14);
+  border-color: rgba(108, 92, 231, 0.25);
+}
+.music-play {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7b6cf0, #9b6ae0);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(108, 92, 231, 0.2);
+}
+.music-play.playing { background: linear-gradient(135deg, #5b4bc4, #8160c7); }
+.music-note { flex: 0 0 auto; font-size: 16px; }
+.music-info { flex: 1; min-width: 0; }
+.music-title {
+  overflow: hidden;
+  color: #4b3fa8;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.music-duration { margin-top: 2px; color: #999; font-size: 11px; }
+.pending-music-bar { margin: 0 0 10px; background: rgba(255, 255, 255, 0.35); }
+.pending-music-actions { display: flex; flex: 0 0 auto; gap: 4px; }
+.pending-music-actions button {
+  min-height: 36px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(108, 92, 231, 0.1);
+  color: #6c5ce7;
+  font-size: 12px;
+  cursor: pointer;
+}
 
 .publish-btn { margin-top: 8px; }
 
