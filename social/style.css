@@ -696,7 +696,7 @@ textarea:focus { border-color: #6c5ce7; }
   object-fit: contain;
   border-radius: 8px;
 }
-.gal-slide .gal-ph { filter: blur(12px); opacity: 0.85; transform: scale(1.02); }
+.gal-slide .gal-ph { filter: blur(6px); opacity: 0.9; transform: scale(1.02); }
 .gal-slide .gal-img { opacity: 0; transition: opacity 0.28s ease; }
 .gal-slide.ready .gal-img { opacity: 1; }
 .gal-slide.ready .gal-spin { display: none; }

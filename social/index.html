@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=51">
+  <link rel="stylesheet" href="style.css?v=52">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -78,7 +78,7 @@
         <div id="media-preview" style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin:10px 0;"></div>
 
         <div class="sticker-bar" id="weather-bar">
-          <span>🌤 今日天气：</span>
+          <span>🌤 此时天气：</span>
           <button class="mood-chip-btn" data-value="☀️ 晴" onclick="selectMoodChip('weather', this)">☀️ 晴</button>
           <button class="mood-chip-btn" data-value="🌤 多云" onclick="selectMoodChip('weather', this)">🌤 多云</button>
           <button class="mood-chip-btn" data-value="☁️ 阴" onclick="selectMoodChip('weather', this)">☁️ 阴</button>
@@ -371,7 +371,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 103;
+const CURRENT_V = 104;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -405,6 +405,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=103"></script>
+<script src="app.js?v=104"></script>
 </body>
 </html>

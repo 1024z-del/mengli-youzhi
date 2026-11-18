@@ -136,6 +136,14 @@ function mediaFallbackAttr(rawUrl) {
 }
 
 // 图片兜底：Pages 刚部署时新文件会短暂 404，先用 raw 拿到，再换回 Pages / CDN
+function fastImgFallbackAttr(rawUrl) {
+  const rel = mediaRelPath(rawUrl);
+  if (!rel) return '';
+  const pages = MEDIA_PAGES_PREFIX + rel;
+  const raw = MEDIA_RAW_PREFIX + rel;
+  // CDN 失败 → Pages → raw
+  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${pages}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${raw}';}"`;
+}
 function imgFallbackAttr(u) {
   const rel = mediaRelPath(u);
   if (!rel) return '';
@@ -162,6 +170,10 @@ function imgUpgrade(img) {
   const pre = new Image();
   pre.onload = () => {
     if (img.dataset.up === '1') img.src = full;
+  };
+  pre.onerror = () => {
+    const pages = img.dataset.fullPages;
+    if (pages && pre.src !== pages) pre.src = pages;
   };
   pre.src = full;
 }
@@ -211,9 +223,25 @@ function renderGallery(urls, start, showIdx) {
     <div class="gal-slide">
       ${it.thumb ? `<img class="gal-ph" src="${mediaPagesUrl(it.thumb)}" decoding="async" alt="">` : ''}
       <span class="gal-spin" aria-hidden="true"></span>
-      <img class="gal-img" src="${mediaPagesUrl(it.url)}"${imgFallbackAttr(it.url)} loading="${i === start ? 'eager' : 'lazy'}" decoding="async" onload="this.parentNode.classList.add('ready')">
+      <img class="gal-img" src="${mediaCdnUrl(it.url)}" data-pages="${mediaPagesUrl(it.url)}" loading="${i === start ? 'eager' : 'lazy'}" decoding="async">
       ${showIdx ? `<span class="gal-idx">${i + 1}/${items.length}</span>` : ''}
     </div>`).join('')}</div>`;
+  // 大图优先走 jsDelivr（国内通常比 Pages 快），3.5 秒没加载完或失败就切回 Pages
+  content.querySelectorAll('.gal-img').forEach(img => {
+    let settled = false;
+    const pages = img.dataset.pages;
+    const timer = setTimeout(() => {
+      if (!settled && pages && img.src !== pages) img.src = pages;
+    }, 3500);
+    img.addEventListener('load', () => {
+      settled = true;
+      clearTimeout(timer);
+      if (img.parentNode) img.parentNode.classList.add('ready');
+    });
+    img.addEventListener('error', () => {
+      if (pages && img.src !== pages) img.src = pages;
+    });
+  });
   viewer.style.display = 'flex';
   const track = content.querySelector('.gal-track');
   // 点空白/轻点关闭；左右滑动时不误触关闭
@@ -232,11 +260,11 @@ function mediaHtml(m, cls) {
   const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
     if (cls !== 'post') {
-      return `<img src="${mediaPagesUrl(raw)}" class="detail-img" loading="lazy" decoding="async"${imgFallbackAttr(raw)}>`;
+      return `<img src="${mediaCdnUrl(raw)}"${fastImgFallbackAttr(raw)} class="detail-img" loading="lazy" decoding="async">`;
     }
     // 动态列表：先显示缩略图（秒开），原图加载好后再替换；不重复请求、不闪烁
     const thumb = m.thumb ? mediaPagesUrl(m.thumb) : mediaPagesUrl(raw);
-    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || raw)} data-full="${mediaPagesUrl(raw)}" onload="imgUpgrade(this)">`;
+    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || raw)} data-full="${mediaCdnUrl(raw)}" data-full-pages="${mediaPagesUrl(raw)}" onload="imgUpgrade(this)">`;
   }
 
   // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
@@ -1724,7 +1752,7 @@ function addImage() {
         alert(`${file.name} 太大了，请小于 10MB`);
         continue;
       }
-      const base64 = await compressImage(file, 1000, 0.7);
+      const base64 = await compressImage(file, 920, 0.66);
       const thumb = await compressImage(file, 320, 0.6);
       pendingMedia.push({ kind: 'image', data: base64, thumb, name: 'img.jpg', mime: 'image/jpeg' });
     }
@@ -2197,8 +2225,8 @@ async function startEditPost(id) {
   pendingMusic = post.music && post.music.url
     ? { name: 'music', title: post.music.title || '未命名音乐', duration: post.music.duration || 0, data: null, previewUrl: null, url: post.music.url }
     : null;
-  pickedWeather = post.weather || '';
-  pickedMood = post.mood || '';
+  pickedWeather = metaList(post.weather);
+  pickedMood = metaList(post.mood);
   document.getElementById('post-text').value = post.text || '';
   document.getElementById('visibility').value = post.visibility || 'private';
   onVisChange();
@@ -2241,8 +2269,8 @@ function resetPublishForm() {
   document.getElementById('post-text').value = '';
   document.getElementById('visibility').value = 'private';
   onVisChange();
-  pickedWeather = '';
-  pickedMood = '';
+  pickedWeather = [];
+  pickedMood = [];
   syncMoodChips();
   clearLocation();
   setEditingPost(null);
@@ -2333,8 +2361,8 @@ async function publishPost() {
         visibility,
         selectedFriends: visibility === 'selected' ? selectedFriendIds.slice() : [],
         location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
-        weather: pickedWeather || null,
-        mood: pickedMood || null,
+        weather: pickedWeather.length ? pickedWeather.slice() : null,
+        mood: pickedMood.length ? pickedMood.slice() : null,
         editedAt
       };
       allPostsCache = allPostsCache.map(p => p.id === editingId ? updated : p);
@@ -2363,8 +2391,8 @@ async function publishPost() {
         location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
         likes: [],
         comments: [],
-        weather: pickedWeather || null,
-        mood: pickedMood || null,
+        weather: pickedWeather.length ? pickedWeather.slice() : null,
+        mood: pickedMood.length ? pickedMood.slice() : null,
         createdAt: now
       };
       allPostsCache.push(post);
@@ -2543,8 +2571,8 @@ async function maybeRestoreDraft() {
     }
     pendingMedia = media;
     pendingMusic = music;
-    pickedWeather = d.weather || '';
-    pickedMood = d.mood || '';
+    pickedWeather = metaList(d.weather);
+    pickedMood = metaList(d.mood);
     document.getElementById('post-text').value = d.text || '';
     document.getElementById('visibility').value = d.visibility || 'private';
     onVisChange();
@@ -3714,31 +3742,38 @@ function onVisChange() {
   scheduleDraftSave();
 }
 
-// ---- 今日天气 / 此时心情 ----
-let pickedWeather = '';
-let pickedMood = '';
+// ---- 此时天气 / 此时心情（都可以多选） ----
+let pickedWeather = [];
+let pickedMood = [];
+
+// 兼容旧动态：单值字符串与数组都接受
+function metaList(v) {
+  if (!v) return [];
+  return Array.isArray(v) ? v.filter(Boolean) : [v];
+}
 
 function selectMoodChip(kind, btn) {
   const v = btn.dataset.value || '';
-  if (kind === 'weather') pickedWeather = pickedWeather === v ? '' : v;
-  else pickedMood = pickedMood === v ? '' : v;
+  const list = kind === 'weather' ? pickedWeather : pickedMood;
+  const idx = list.indexOf(v);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(v);
   syncMoodChips();
   if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
 }
 
 function syncMoodChips() {
   document.querySelectorAll('#weather-bar .mood-chip-btn').forEach(b => {
-    b.classList.toggle('active', !!pickedWeather && b.dataset.value === pickedWeather);
+    b.classList.toggle('active', pickedWeather.includes(b.dataset.value));
   });
   document.querySelectorAll('#mood-bar .mood-chip-btn').forEach(b => {
-    b.classList.toggle('active', !!pickedMood && b.dataset.value === pickedMood);
+    b.classList.toggle('active', pickedMood.includes(b.dataset.value));
   });
 }
 
 function postMetaHtml(p) {
-  const chips = [];
-  if (p.weather) chips.push(`<span class="post-meta-chip">${escapeHtml(p.weather)}</span>`);
-  if (p.mood) chips.push(`<span class="post-meta-chip">${escapeHtml(p.mood)}</span>`);
+  const chips = metaList(p.weather).concat(metaList(p.mood))
+    .map(v => `<span class="post-meta-chip">${escapeHtml(v)}</span>`);
   return chips.length ? `<div class="post-meta-row">${chips.join('')}</div>` : '';
 }
 
