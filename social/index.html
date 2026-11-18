@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=52">
+  <link rel="stylesheet" href="style.css?v=53">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -69,6 +69,9 @@
     <!-- 发布页 -->
     <section id="tab-publish" class="tab-content" style="display:none;">
       <div class="publish-card">
+        <div class="publish-head">
+          <button class="publish-clear" onclick="confirmClearDraft()" title="清空内容">✕</button>
+        </div>
         <div id="edit-banner" style="display:none;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;border-radius:12px;background:linear-gradient(120deg,rgba(122,99,240,0.16),rgba(255,120,210,0.14));border:1px solid rgba(255,255,255,0.7);color:#5b47c8;font-size:13px;">
           <span style="flex:1;">✏️ 正在编辑这条动态</span>
           <button onclick="cancelEditPost()" style="border:none;background:rgba(255,255,255,0.75);color:#6c5ce7;font-size:12px;padding:4px 10px;border-radius:8px;cursor:pointer;">取消</button>
@@ -263,6 +266,18 @@
   </div>
 </div>
 
+<!-- 清空编辑内容确认 -->
+<div id="clear-draft-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:340px;text-align:center;">
+    <h3 style="margin-bottom:8px;">清空编辑内容？</h3>
+    <p style="font-size:13px;color:#7a7396;line-height:1.6;margin-bottom:16px;">文字、图片、视频、音乐、天气心情和位置都会被清空，无法恢复。</p>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-secondary" onclick="closeOverlay('clear-draft-modal')" style="margin:0;flex:1;">取消</button>
+      <button class="btn-danger" onclick="doClearDraftNow()" style="margin:0;flex:1;">清空</button>
+    </div>
+  </div>
+</div>
+
 <!-- 位置选择弹窗 -->
 <div id="location-modal" class="detail-view" style="display:none;">
   <div class="detail-card" style="max-width:420px;">
@@ -371,7 +386,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 104;
+const CURRENT_V = 105;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -405,6 +420,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=104"></script>
+<script src="app.js?v=105"></script>
 </body>
 </html>

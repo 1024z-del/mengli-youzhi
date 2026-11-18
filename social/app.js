@@ -704,7 +704,7 @@ function renderFeed(posts) {
       </div>
       ${mediaListHtml(p, 'post')}
       ${musicBarHtml(p)}
-      <p class="post-text">${escapeHtml(p.text)}</p>
+      ${postTextHtml(p)}
       ${postMetaHtml(p)}
       ${p.location ? `<div class="post-loc">📍 ${escapeHtml(locText(p.location))}</div>` : ''}
       <div class="post-time">${postTimeHtml(p)}</div>
@@ -1173,7 +1173,7 @@ function renderUserPage(userId, user, posts) {
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
             ${mediaListHtml(p, 'post')}
             ${musicBarHtml(p)}
-            <p class="post-text">${escapeHtml(p.text)}</p>
+            ${postTextHtml(p)}
             ${postMetaHtml(p)}
             <div class="post-time">${postTimeHtml(p)}</div>
           </div>
@@ -1753,7 +1753,7 @@ function addImage() {
         continue;
       }
       const base64 = await compressImage(file, 920, 0.66);
-      const thumb = await compressImage(file, 320, 0.6);
+      const thumb = await compressImage(file, 640, 0.62);
       pendingMedia.push({ kind: 'image', data: base64, thumb, name: 'img.jpg', mime: 'image/jpeg' });
     }
     input.value = '';
@@ -2529,6 +2529,21 @@ function clearDraft() {
   draftSavedBlobs.clear();
   try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
   idbClear();
+}
+
+// 发布页左上角 ✕：先确认，再清空
+function confirmClearDraft() {
+  if (!formHasContent() && !editingPostId) { showToast('当前没有可清空的内容'); return; }
+  const el = document.getElementById('clear-draft-modal');
+  if (!el) return;
+  el.style.display = 'flex';
+  openOverlay('clear-draft-modal');
+}
+
+function doClearDraftNow() {
+  closeOverlay('clear-draft-modal');
+  resetPublishForm();
+  showToast('已清空编辑内容');
 }
 
 async function maybeRestoreDraft() {
@@ -3769,6 +3784,22 @@ function syncMoodChips() {
   document.querySelectorAll('#mood-bar .mood-chip-btn').forEach(b => {
     b.classList.toggle('active', pickedMood.includes(b.dataset.value));
   });
+}
+
+// 动态正文：超过 100 字先折叠，可展开/收起
+function postTextHtml(p) {
+  const text = p.text || '';
+  if (!text) return '';
+  if (text.length <= 100) return `<p class="post-text">${escapeHtml(text)}</p>`;
+  return `<p class="post-text clamp">${escapeHtml(text)}</p><button class="text-toggle" onclick="togglePostText(event, this)">展开全文</button>`;
+}
+
+function togglePostText(e, btn) {
+  e.stopPropagation();
+  const p = btn.previousElementSibling;
+  if (!p) return;
+  const clamped = p.classList.toggle('clamp');
+  btn.textContent = clamped ? '展开全文' : '收起';
 }
 
 function postMetaHtml(p) {

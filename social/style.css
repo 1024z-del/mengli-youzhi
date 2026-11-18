@@ -708,6 +708,43 @@ textarea:focus { border-color: #6c5ce7; }
   border-top-color: #fff;
   animation: musicSpin 0.8s linear infinite;
 }
+/* 发布页左上角清空按钮 */
+.publish-head { display: flex; justify-content: flex-start; margin-bottom: 6px; }
+.publish-clear {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.55);
+  color: #7a6bb5;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 长文折叠 */
+.post-text.clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.text-toggle {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #7b6cf0;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* 待发布媒体：长按拖动排序 */
 .media-item {
   position: relative;
