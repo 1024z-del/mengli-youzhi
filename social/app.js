@@ -167,13 +167,23 @@ function mediaListHtml(p, cls) {
 function openImageGallery(pid, start) {
   const urls = galleryStore[pid] || [];
   if (!urls.length) return;
+  renderGallery(urls, start, true);
+}
+
+// 头像、主页背景等单张图片：点开看全图，点空白关闭
+function openSingleImage(url) {
+  if (!url) return;
+  renderGallery([url], 0, false);
+}
+
+function renderGallery(urls, start, showIdx) {
   const viewer = document.getElementById('media-viewer');
   const content = document.getElementById('media-viewer-content');
   if (!viewer || !content) return;
   content.style.width = '100%';
   content.style.height = '92vh';
   content.innerHTML = `<div class="gal-track">${urls.map((u, i) =>
-    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"${imgFallbackAttr(u)}><span class="gal-idx">${i + 1}/${urls.length}</span></div>`
+    `<div class="gal-slide"><img src="${mediaPagesUrl(u)}"${imgFallbackAttr(u)}>${showIdx ? `<span class="gal-idx">${i + 1}/${urls.length}</span>` : ''}</div>`
   ).join('')}</div>`;
   viewer.style.display = 'flex';
   const track = content.querySelector('.gal-track');
@@ -621,7 +631,7 @@ function renderFeed(posts) {
 function getAvatarHtml(name, avatarUrl, userId) {
   let inner;
   if (avatarUrl) {
-    inner = `<img src="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;">`;
+    inner = `<img src="${avatarUrl}" data-zoom="${avatarUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;margin-right:10px;flex-shrink:0;cursor:zoom-in;">`;
   } else {
     // 默认头像：昵称首字 + 渐变背景
     const initial = (name || '?').charAt(0).toUpperCase();
@@ -630,7 +640,8 @@ function getAvatarHtml(name, avatarUrl, userId) {
     inner = `<div style="width:36px;height:36px;border-radius:50%;background:${color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;margin-right:10px;flex-shrink:0;">${escapeHtml(initial)}</div>`;
   }
   if (!userId) return inner;
-  // 可点击进入个人主页（阻止冒泡，避免触发外层卡片的点击）
+  // 有头像时点头像看全图（全局委托处理）；没有头像时点默认头像仍进入个人主页
+  if (avatarUrl) return `<span style="display:inline-flex;flex-shrink:0;">${inner}</span>`;
   return `<span onclick="event.stopPropagation();openUserPage('${userId}')" style="display:inline-flex;cursor:pointer;flex-shrink:0;">${inner}</span>`;
 }
 
@@ -760,7 +771,7 @@ function renderPostDetail(id) {
     <div class="detail-header">
       ${getAvatarHtml(post.authorName, post.authorAvatar, post.authorId)}
       <div style="flex:1;">
-        <span class="post-author">${escapeHtml(post.authorName)}</span>
+        <span class="post-author" onclick="openUserPage('${post.authorId}')" style="cursor:pointer;">${escapeHtml(post.authorName)}</span>
         <span class="post-vis">${visLabel(post.visibility)}</span>
       </div>
     </div>
@@ -781,7 +792,7 @@ function renderPostDetail(id) {
           ${getAvatarHtml(c.username, c.avatar, c.userId)}
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:600;color:#333;">
-              ${escapeHtml(c.username)}
+              <span onclick="event.stopPropagation();openUserPage('${c.userId}')" style="cursor:pointer;">${escapeHtml(c.username)}</span>
               ${c.userId === post.authorId ? '<span style="font-size:10px;background:#6c5ce7;color:#fff;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:normal;">作者</span>' : ''}
               ${c.userId === currentUser.id ? '<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;margin-left:6px;font-weight:normal;">我</span>' : ''}
             </div>
@@ -1031,11 +1042,11 @@ function renderUserPage(userId, user, posts) {
     ? `background-image:url('${mediaPagesUrl(cover)}');background-size:cover;background-position:center;`
     : 'background:linear-gradient(135deg,#a78bfa,#7c3aed);';
   const avatarHtml = (user && user.avatar)
-    ? `<img src="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;">`
+    ? `<img src="${user.avatar}" data-zoom="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;cursor:zoom-in;">`
     : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;background:#a78bfa;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>`;
 
   document.getElementById('user-page-content').innerHTML = `
-    <div style="${coverStyle}height:220px;position:relative;margin-top:0;">
+    <div style="${coverStyle}height:220px;position:relative;margin-top:0;"${cover ? ` data-zoom="${cover}"` : ''}>
       <button onclick="closeUserPage()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;">‹</button>
       ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;">编辑</button>` : ''}
     </div>
@@ -1735,7 +1746,7 @@ async function loadFriendsPage() {
     html += myFriends.map(u => `
       <div class="friend-row">
         ${getAvatarHtml(u.username, u.avatar, u.id)}
-        <span class="friend-name">${escapeHtml(u.username)}</span>
+        <span class="friend-name" onclick="openUserPage('${u.id}')" style="cursor:pointer;">${escapeHtml(u.username)}</span>
         <button onclick="removeFriend('${u.id}')" class="friend-del">删除</button>
       </div>
     `).join('');
@@ -1748,7 +1759,7 @@ async function loadFriendsPage() {
     html += others.map(u => `
       <div class="friend-row">
         ${getAvatarHtml(u.username, u.avatar, u.id)}
-        <span class="friend-name">${escapeHtml(u.username)}</span>
+        <span class="friend-name" onclick="openUserPage('${u.id}')" style="cursor:pointer;">${escapeHtml(u.username)}</span>
         <button onclick="addFriend('${u.id}')" class="friend-add">+ 加好友</button>
       </div>
     `).join('');
@@ -1856,6 +1867,8 @@ async function loadSettings() {
     const avatarEl = document.getElementById('profile-avatar-preview');
     if (avatarEl) {
       avatarEl.src = currentUser.avatar || getAvatarUrl(currentUser.username);
+      if (currentUser.avatar) avatarEl.setAttribute('data-zoom', currentUser.avatar);
+      else avatarEl.removeAttribute('data-zoom');
     }
     const nameEl = document.getElementById('profile-name-preview');
     if (nameEl) nameEl.textContent = currentUser.username;
@@ -2742,6 +2755,18 @@ function addSticker(s) {
 }
 
 // ---- Init ----
+// 全局：点任意头像 / 主页背景图看全图
+document.addEventListener('click', e => {
+  const z = e.target.closest('[data-zoom]');
+  if (!z) return;
+  if (e.target.closest('button')) return;
+  const src = z.getAttribute('data-zoom');
+  if (!src) return;
+  e.preventDefault();
+  e.stopPropagation();
+  openSingleImage(src);
+}, true);
+
 window.addEventListener('DOMContentLoaded', () => {
   if (currentUser) showApp();
   else showAuth();
