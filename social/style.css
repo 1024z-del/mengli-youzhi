@@ -348,31 +348,41 @@ textarea:focus { border-color: #6c5ce7; }
   align-items: center;
   gap: 11px;
   margin: 10px 0;
-  padding: 8px 14px 10px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 18px;
-  background: linear-gradient(118deg,
-    rgba(255, 255, 255, 0.82) 0%,
-    rgba(240, 235, 255, 0.66) 42%,
-    rgba(232, 241, 255, 0.7) 100%);
-  background-size: 210% 100%;
-  background-position: 0% 50%;
-  -webkit-backdrop-filter: blur(14px) saturate(155%);
-  backdrop-filter: blur(14px) saturate(155%);
+  padding: 9px 14px 12px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 20px;
+  background:
+    radial-gradient(115% 150% at 6% -20%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0) 52%),
+    radial-gradient(85% 130% at 88% 118%, rgba(255, 156, 226, 0.42), rgba(255, 156, 226, 0) 62%),
+    radial-gradient(78% 115% at 12% 122%, rgba(130, 190, 255, 0.42), rgba(130, 190, 255, 0) 64%),
+    linear-gradient(118deg, rgba(255, 255, 255, 0.46) 0%, rgba(238, 232, 255, 0.3) 46%, rgba(226, 240, 255, 0.38) 100%);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 220% 100%;
+  background-position: 0 0, 0 0, 0 0, 0% 50%;
+  -webkit-backdrop-filter: blur(22px) saturate(190%) contrast(1.06);
+  backdrop-filter: blur(22px) saturate(190%) contrast(1.06);
   box-shadow:
-    0 6px 18px rgba(94, 76, 190, 0.13),
-    0 1px 2px rgba(94, 76, 190, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    0 12px 30px rgba(88, 66, 190, 0.18),
+    0 3px 8px rgba(88, 66, 190, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.98),
+    inset 0 -14px 26px rgba(168, 140, 255, 0.14);
   cursor: default;
-  transition: box-shadow 0.35s ease, border-color 0.35s ease;
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
 }
+/* 玻璃表面的斜向高光 + 细颗粒质感 */
 .music-bar::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: radial-gradient(130% 90% at 10% -10%, rgba(255, 255, 255, 0.9), transparent 58%);
   pointer-events: none;
+  background-image:
+    linear-gradient(108deg, rgba(255, 255, 255, 0) 32%, rgba(255, 255, 255, 0.62) 47%, rgba(255, 255, 255, 0) 62%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.32'/%3E%3C/svg%3E");
+  background-size: 260% 100%, 140px 140px;
+  background-position: -80% 0, 0 0;
+  background-repeat: no-repeat, repeat;
+  opacity: 0.34;
 }
 /* 底部进度光带 */
 .music-bar::after {
@@ -381,26 +391,35 @@ textarea:focus { border-color: #6c5ce7; }
   left: 0;
   bottom: 0;
   width: 100%;
-  height: 2.5px;
-  border-radius: 0 2px 2px 0;
+  height: 3px;
+  border-radius: 0 3px 3px 0;
   transform: scaleX(var(--music-progress, 0));
   transform-origin: left center;
-  background: linear-gradient(90deg, #c3b2ff, #8f7bff 45%, #ffa8e2);
+  background: linear-gradient(90deg, #cbbcff, #8f7bff 42%, #ff9fe0);
+  box-shadow: 0 0 10px rgba(160, 130, 255, 0.75);
   opacity: 0.95;
   transition: transform 0.3s linear;
   pointer-events: none;
 }
 .music-bar.playing {
-  border-color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.82);
   box-shadow:
-    0 9px 26px rgba(120, 95, 255, 0.22),
-    0 1px 2px rgba(94, 76, 190, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95);
-  animation: musicAurora 9s ease-in-out infinite;
+    0 14px 34px rgba(120, 90, 255, 0.26),
+    0 3px 10px rgba(120, 90, 255, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 1),
+    inset 0 -14px 26px rgba(186, 140, 255, 0.2);
+  animation: musicAurora 10s ease-in-out infinite;
 }
 @keyframes musicAurora {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  0%, 100% { background-position: 0 0, 0 0, 0 0, 0% 50%; }
+  50% { background-position: 0 0, 0 0, 0 0, 100% 50%; }
+}
+.music-bar.playing::before { animation: musicSheen 7s ease-in-out infinite; }
+@keyframes musicSheen {
+  0% { background-position: -85% 0, 0 0; opacity: 0.3; }
+  45% { background-position: 185% 0, 0 0; opacity: 0.52; }
+  100% { background-position: 185% 0, 0 0; opacity: 0.3; }
 }
 .music-play {
   position: relative;
@@ -408,16 +427,20 @@ textarea:focus { border-color: #6c5ce7; }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: none;
   border-radius: 50%;
-  background: linear-gradient(142deg, #9a86ff 0%, #7b5cf0 48%, #b96ae2 100%);
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(145deg, #a796ff 0%, #7a5cf0 50%, #c46ce8 100%);
   color: #fff;
   box-shadow:
-    0 6px 16px rgba(112, 88, 240, 0.36),
-    inset 0 1px 1px rgba(255, 255, 255, 0.5);
+    0 9px 22px rgba(118, 86, 255, 0.45),
+    0 2px 4px rgba(78, 48, 178, 0.25),
+    inset 0 1px 1px rgba(255, 255, 255, 0.8),
+    inset 0 -5px 10px rgba(70, 30, 170, 0.28);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.18s ease, box-shadow 0.3s ease;
@@ -425,10 +448,14 @@ textarea:focus { border-color: #6c5ce7; }
 .music-play svg { display: block; width: 17px; height: 17px; }
 .music-play:active { transform: scale(0.93); }
 .music-play.playing {
-  background: linear-gradient(142deg, #8a72ff 0%, #6f4fe6 50%, #b160e0 100%);
+  background:
+    radial-gradient(circle at 34% 22%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 46%),
+    linear-gradient(145deg, #9c86ff 0%, #6d4de4 50%, #c060e4 100%);
   box-shadow:
-    0 7px 22px rgba(140, 105, 255, 0.5),
-    inset 0 1px 1px rgba(255, 255, 255, 0.55);
+    0 10px 26px rgba(140, 105, 255, 0.55),
+    0 2px 4px rgba(78, 48, 178, 0.3),
+    inset 0 1px 1px rgba(255, 255, 255, 0.85),
+    inset 0 -5px 10px rgba(70, 30, 170, 0.3);
 }
 /* 播放时按钮外的呼吸光环 */
 .music-play.playing::after {
@@ -469,12 +496,17 @@ textarea:focus { border-color: #6c5ce7; }
 .music-info { flex: 1; min-width: 0; position: relative; z-index: 1; }
 .music-title {
   overflow: hidden;
-  color: #453a92;
+  background: linear-gradient(96deg, #41358f 0%, #6a51d6 42%, #9a62db 74%, #b774d2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #41358f;
   font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.3px;
   white-space: nowrap;
   text-overflow: ellipsis;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.65));
 }
 .music-duration {
   margin-top: 3px;
@@ -498,7 +530,8 @@ textarea:focus { border-color: #6c5ce7; }
   display: block;
   width: 2.5px;
   border-radius: 2px;
-  background: linear-gradient(180deg, #c9b8ff, #8f7bff);
+  background: linear-gradient(180deg, #cfc0ff, #8f7bff 60%, #ff9fe0);
+  box-shadow: 0 0 6px rgba(150, 120, 255, 0.55);
   transform-origin: bottom center;
   animation: musicEq 1.15s ease-in-out infinite;
 }
