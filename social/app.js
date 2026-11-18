@@ -1214,7 +1214,9 @@ function fileToBase64(file) {
 }
 
 // ---- 本地音乐导入与全局单播放器 ----
-let pendingMusic = null; // { name, title, data, mime, duration, previewUrl, url }
+// 只记录歌名和歌手，音频不上传仓库，也不进备份
+let pendingMusic = null; // { title, artist, previewUrl }
+let musicModalTempUrl = null; // 弹窗里新选的本地试听文件
 let musicAudio = null;
 let musicPlayOp = 0;
 const musicState = { kind: null, id: null, sources: [], sourceIndex: 0, loading: false };
@@ -1224,35 +1226,6 @@ function formatMusicDuration(seconds) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 }
 
-function readAudioDuration(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const audio = new Audio();
-    let finished = false;
-    const timer = setTimeout(() => finish(new Error('音乐读取超时，请换一首试试')), 20000);
-    function finish(err) {
-      if (finished) return;
-      finished = true;
-      const duration = audio.duration;
-      clearTimeout(timer);
-      audio.onloadeddata = null;
-      audio.onerror = null;
-      audio.removeAttribute('src');
-      audio.load();
-      URL.revokeObjectURL(url);
-      if (err) reject(err);
-      else if (!Number.isFinite(duration) || duration <= 0) reject(new Error('无法读取音乐时长'));
-      else resolve(duration);
-    }
-    audio.preload = 'auto';
-    // loadeddata 表示首帧已真正解码，能拦截损坏或加密音频
-    audio.onloadeddata = () => finish();
-    audio.onerror = () => finish(new Error('无法解码这首音乐，加密 / DRM 或不支持的音频无法导入'));
-    audio.src = url;
-    audio.load();
-  });
-}
-
 function renderPendingMusic() {
   const box = document.getElementById('music-preview');
   if (!box) return;
@@ -1260,15 +1233,18 @@ function renderPendingMusic() {
     box.innerHTML = '';
     return;
   }
+  const lead = pendingMusic.previewUrl
+    ? `<button class="music-play" data-music-preview-button onclick="previewPendingMusic()" aria-label="试听音乐">▶</button>`
+    : `<span class="music-note">🎵</span>`;
+  const sub = [pendingMusic.artist, pendingMusic.previewUrl ? '可试听' : '音频不上传'].filter(Boolean).join(' · ');
   box.innerHTML = `<div class="music-bar pending-music-bar">
-    <button class="music-play" data-music-preview-button onclick="previewPendingMusic()" aria-label="试听音乐">▶</button>
-    <span class="music-note">🎵</span>
+    ${lead}
     <div class="music-info">
       <div class="music-title">${escapeHtml(pendingMusic.title)}</div>
-      <div class="music-duration">${formatMusicDuration(pendingMusic.duration)}${pendingMusic.url ? ' · 已上传' : ''}</div>
+      <div class="music-duration">${escapeHtml(sub)}</div>
     </div>
     <div class="pending-music-actions">
-      <button onclick="addMusic()">更换</button>
+      <button onclick="addMusic()">修改</button>
       <button onclick="removePendingMusic()">移除</button>
     </div>
   </div>`;
@@ -1286,43 +1262,72 @@ function removePendingMusic() {
   clearPendingMusic();
 }
 
+// 打开“添加音乐”弹窗，只收集歌名和歌手
 function addMusic() {
+  const titleInput = document.getElementById('music-title-input');
+  const artistInput = document.getElementById('music-artist-input');
+  titleInput.value = pendingMusic ? pendingMusic.title : '';
+  artistInput.value = pendingMusic ? (pendingMusic.artist || '') : '';
+  if (musicModalTempUrl) { URL.revokeObjectURL(musicModalTempUrl); musicModalTempUrl = null; }
+  const hint = document.getElementById('music-file-hint');
+  hint.textContent = pendingMusic && pendingMusic.previewUrl ? '已保留上次选择的本地文件（只在本机试听）' : '';
+  document.getElementById('music-modal').style.display = 'flex';
+  openOverlay('music-modal');
+}
+
+// 从本地文件识别歌名，仅用于填表和本地试听
+function pickMusicFile() {
   const input = document.getElementById('music-input');
   input.value = '';
-  input.onchange = async e => {
+  input.onchange = e => {
     const file = (e.target.files || [])[0];
+    input.value = '';
     if (!file) return;
-    try {
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      const allowedExt = ['mp3', 'm4a', 'aac', 'wav'];
-      const allowedMime = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/wav', 'audio/x-wav'];
-      if (ext === 'm4p' || (!allowedExt.includes(ext) && !allowedMime.includes(file.type))) {
-        throw new Error('请选择 MP3、M4A、AAC 或 WAV 音乐，M4P / DRM 加密歌曲不能导入');
-      }
-      if (file.size > 15 * 1024 * 1024) throw new Error('音乐不能超过 15MB');
-      showToast('正在校验音乐...');
-      const duration = await readAudioDuration(file);
-      if (duration > 600) throw new Error('音乐不能超过 10 分钟');
-      const data = await fileToBase64(file);
-      clearPendingMusic();
-      pendingMusic = {
-        name: file.name || 'music',
-        title: (file.name || '未命名音乐').replace(/\.[^.]+$/, '') || '未命名音乐',
-        data,
-        mime: file.type || 'audio/mpeg',
-        duration,
-        previewUrl: URL.createObjectURL(file),
-        url: null
-      };
-      renderPendingMusic();
-      showToast('✅ 音乐已添加，可先试听');
-    } catch (err) {
-      alert(err.message || '音乐读取失败，请换一首试试');
-    } finally {
-      input.value = '';
+    if (musicModalTempUrl) URL.revokeObjectURL(musicModalTempUrl);
+    musicModalTempUrl = URL.createObjectURL(file);
+    const base = (file.name || '').replace(/\.[^.]+$/, '').trim();
+    const titleInput = document.getElementById('music-title-input');
+    const artistInput = document.getElementById('music-artist-input');
+    // 文件名常见写法「歌名 - 歌手」，带空格时才自动拆分
+    const parts = base.split(/\s+[-–—]\s+/);
+    if (parts.length === 2) {
+      titleInput.value = parts[0].trim();
+      if (!artistInput.value.trim()) artistInput.value = parts[1].trim();
+    } else if (!titleInput.value.trim()) {
+      titleInput.value = base || '未命名音乐';
     }
+    document.getElementById('music-file-hint').textContent = `已选择「${file.name}」，只在本机试听，不会上传`;
   };
   input.click();
+}
+
+function confirmMusicInfo() {
+  const title = document.getElementById('music-title-input').value.trim();
+  const artist = document.getElementById('music-artist-input').value.trim();
+  if (!title) {
+    alert('请填写歌名');
+    return;
+  }
+  if (musicState.kind === 'preview') stopMusic();
+  const previousUrl = pendingMusic ? pendingMusic.previewUrl : null;
+  const nextUrl = musicModalTempUrl || previousUrl || null;
+  if (previousUrl && previousUrl !== nextUrl) URL.revokeObjectURL(previousUrl);
+  pendingMusic = {
+    title: title.slice(0, 100),
+    artist: artist.slice(0, 100),
+    previewUrl: nextUrl
+  };
+  musicModalTempUrl = null;
+  renderPendingMusic();
+  closeOverlay('music-modal');
+}
+
+function closeMusicModal() {
+  if (musicModalTempUrl) {
+    URL.revokeObjectURL(musicModalTempUrl);
+    musicModalTempUrl = null;
+  }
+  closeOverlay('music-modal');
 }
 
 function ensureMusicAudio() {
@@ -1346,14 +1351,26 @@ function musicSources(url) {
 }
 
 function musicBarHtml(post) {
-  if (!post.music || typeof post.music.url !== 'string' || !post.music.url) return '';
+  if (!post.music) return '';
+  const hasAudio = typeof post.music.url === 'string' && post.music.url;
   const title = typeof post.music.title === 'string' && post.music.title ? post.music.title : '未命名音乐';
+  const artist = typeof post.music.artist === 'string' ? post.music.artist : '';
+  const sub = hasAudio ? formatMusicDuration(post.music.duration) : artist;
+  if (!hasAudio) {
+    // 只记录歌名和歌手，没有音频文件时展示信息条
+    return `<div class="music-bar static" onclick="event.stopPropagation()">
+      <span class="music-note">🎵</span>
+      <div class="music-info">
+        <div class="music-title">${escapeHtml(title)}</div>
+        ${sub ? `<div class="music-duration">${escapeHtml(sub)}</div>` : ''}
+      </div>
+    </div>`;
+  }
   return `<div class="music-bar" onclick="event.stopPropagation()">
     <button class="music-play" data-music-button="${post.id}" onclick="event.stopPropagation();togglePostMusic('${post.id}')" aria-label="播放音乐">▶</button>
-    <span class="music-note">🎵</span>
     <div class="music-info">
       <div class="music-title">${escapeHtml(title)}</div>
-      <div class="music-duration">${formatMusicDuration(post.music.duration)}</div>
+      <div class="music-duration">${escapeHtml([artist, sub].filter(Boolean).join(' · '))}</div>
     </div>
   </div>`;
 }
@@ -1477,7 +1494,7 @@ function togglePostMusic(postId) {
 }
 
 function previewPendingMusic() {
-  if (!pendingMusic) return;
+  if (!pendingMusic || !pendingMusic.previewUrl) return;
   if (musicState.kind === 'preview') {
     if (musicState.loading) { stopMusic(); return; }
     if (musicAudio && !musicAudio.paused && !musicAudio.ended) { pauseMusic(); return; }
@@ -1997,7 +2014,7 @@ async function publishPost() {
   }
 
   try {
-    const total = pendingMedia.length + (music ? 1 : 0);
+    const total = pendingMedia.length;
     let done = 0;
     showUploadProgress(total ? `上传中 0/${total}...` : '发布中...');
 
@@ -2019,17 +2036,7 @@ async function publishPost() {
         showUploadProgress(`上传中 ${done}/${total}...`);
       }
     };
-    const musicTask = (async () => {
-      if (!music) return null;
-      showUploadProgress(`上传中 ${done}/${total}：音乐...`);
-      // 已上传成功但动态发布失败时，重试直接复用 URL
-      if (!music.url) music.url = await ghUploadMedia(music.name, music.data, { timeout: 300000 });
-      done++;
-      showUploadProgress(`上传中 ${done}/${total}...`);
-      return { url: music.url, title: music.title, duration: music.duration };
-    })();
-    const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask]);
-    const uploadedMusic = results[2];
+    await Promise.all([uploadWorker(), uploadWorker()]);
 
     const media = uploaded.map((u, i) => {
       const m = pendingMedia[i];
@@ -2051,7 +2058,7 @@ async function publishPost() {
       authorAvatar: currentUser.avatar || null,
       text,
       media,
-      music: uploadedMusic,
+      music: music ? { title: music.title, artist: music.artist || '' } : null,
       image: (media.find(m => m.type === 'image') || {}).url || null,
       video: (media.find(m => m.type === 'video') || {}).url || null,
       visibility,
@@ -2439,13 +2446,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function normalizeImportedMusic(music) {
-  if (!music || typeof music.url !== 'string' || music.url.indexOf(MEDIA_RAW_PREFIX) !== 0 || typeof music.title !== 'string') return null;
+  if (!music || typeof music !== 'object') return null;
+  const title = typeof music.title === 'string' ? music.title.trim().slice(0, 100) : '';
+  const artist = typeof music.artist === 'string' ? music.artist.trim().slice(0, 100) : '';
+  // 兼容 v89/v90 备份里带音频地址的旧数据
+  const url = typeof music.url === 'string' && music.url.indexOf(MEDIA_RAW_PREFIX) === 0 ? music.url : '';
+  if (!title && !url) return null;
   const duration = Number(music.duration);
-  return {
-    url: music.url,
-    title: music.title.slice(0, 200),
-    duration: Number.isFinite(duration) && duration > 0 && duration <= 600 ? duration : 0
-  };
+  const item = { title: title || '未命名音乐', artist };
+  if (url) {
+    item.url = url;
+    item.duration = Number.isFinite(duration) && duration > 0 && duration <= 600 ? duration : 0;
+  }
+  return item;
 }
 
 async function doImport() {

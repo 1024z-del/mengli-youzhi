@@ -383,6 +383,8 @@ textarea:focus { border-color: #6c5ce7; }
 }
 .music-duration { margin-top: 2px; color: #999; font-size: 11px; }
 .pending-music-bar { margin: 0 0 10px; background: rgba(255, 255, 255, 0.35); }
+.music-bar.static { background: rgba(108, 92, 231, 0.06); padding-left: 12px; }
+.music-bar.static .music-note { font-size: 18px; }
 .pending-music-actions { display: flex; flex: 0 0 auto; gap: 4px; }
 .pending-music-actions button {
   min-height: 36px;

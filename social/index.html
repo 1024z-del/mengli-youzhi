@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=43">
+  <link rel="stylesheet" href="style.css?v=44">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -110,7 +110,7 @@
           <button class="action-btn" onclick="addMusic()">🎵 音乐</button>
         </div>
         <div id="music-preview" class="pending-music"></div>
-        <p style="font-size:12px;color:#999;margin:4px 0 8px;">音乐：从 iPhone「文件」选择 MP3 / M4A / AAC / WAV，单首不超过 15MB、10 分钟。Apple Music、网易云等加密下载歌曲及 M4P / DRM 文件不能导入。</p>
+        <p style="font-size:12px;color:#999;margin:4px 0 8px;">音乐：只保存歌名和歌手，音频不会上传，也不会进备份。可选本地文件自动识别歌名并试听，也可以手动填写。</p>
         <p style="font-size:12px;color:#999;margin:4px 0 8px;">实况照片：先在「照片」里打开它 → 右上角分享 →「存储为视频」，再点「🫧 实况」。图片/视频都支持一次多选多个。视频会自动压缩后再上传，速度更快。</p>
         <input type="file" id="img-input" accept="image/*" multiple style="display:none;">
         <input type="file" id="video-input" accept="video/*" multiple style="display:none;">
@@ -270,6 +270,22 @@
   </div>
 </div>
 
+<!-- 添加音乐弹窗 -->
+<div id="music-modal" class="detail-view" style="display:none;">
+  <div class="detail-card" style="max-width:400px;">
+    <h3>🎵 添加音乐</h3>
+    <p style="color:#888;font-size:13px;margin-top:6px;">只记录歌名和歌手，不会上传音频文件。</p>
+    <input type="text" id="music-title-input" placeholder="歌名" maxlength="100" style="margin-top:12px;">
+    <input type="text" id="music-artist-input" placeholder="歌手（可不填）" maxlength="100">
+    <button class="btn-secondary" onclick="pickMusicFile()" style="margin:0 0 8px;">📁 从本地文件识别歌名</button>
+    <div id="music-file-hint" style="font-size:12px;color:#999;line-height:1.5;"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn-secondary" onclick="closeMusicModal()" style="margin:0;flex:1;">取消</button>
+      <button class="btn-danger" onclick="confirmMusicInfo()" style="margin:0;flex:1;">确定</button>
+    </div>
+  </div>
+</div>
+
 <!-- 回收站弹窗 -->
 <div id="trash-modal" class="detail-view" style="display:none;">
   <div class="detail-card" style="max-width:420px;">
@@ -358,7 +374,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 90;
+const CURRENT_V = 91;
 function forceReload() {
   const url = new URL(location.href);
   url.searchParams.set('r', Date.now());
@@ -386,6 +402,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=90"></script>
+<script src="app.js?v=91"></script>
 </body>
 </html>
