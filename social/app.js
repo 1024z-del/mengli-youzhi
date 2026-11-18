@@ -867,6 +867,7 @@ function renderPostDetail(id) {
         ${liked ? '❤️' : '🤍'} ${(post.likes || []).length}
       </span>
       <span class="action-btn-comment">💬 ${comments.length}</span>
+      ${post.authorId === currentUser.id ? `<span class="action-btn-comment" onclick="startEditPost('${post.id}')">✏️ 编辑</span>` : ''}
     </div>
     <div class="comment-section">
       <h4 style="font-size:14px;color:#666;margin-bottom:10px;">评论 (${comments.length})</h4>
@@ -1175,8 +1176,12 @@ function toggleNotifExpand() {
 let pendingMedia = []; // { kind:'image'|'video', data, name, mime, live, sound }
 
 function pendingMediaThumb(m) {
-  if (m.kind === 'image') return `data:${m.mime};base64,${m.data}`;
-  if (m.thumb) return `data:image/jpeg;base64,${m.thumb}`;
+  if (m.thumb) {
+    const t = String(m.thumb);
+    return /^(https?:|data:)/.test(t) ? mediaPagesUrl(t) : `data:image/jpeg;base64,${t}`;
+  }
+  if (m.kind === 'image' && m.data) return `data:${m.mime};base64,${m.data}`;
+  if (m.poster) return mediaPagesUrl(m.poster);
   return '';
 }
 
@@ -1293,9 +1298,11 @@ function previewPendingMedia(i) {
   const content = document.getElementById('media-viewer-content');
   if (!viewer || !content) return;
   if (m.kind === 'image') {
-    content.innerHTML = `<img src="data:${m.mime};base64,${m.data}" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain;">`;
+    const src = m.data ? `data:${m.mime};base64,${m.data}` : mediaPagesUrl(m.url || m.thumb || '');
+    content.innerHTML = `<img src="${src}" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain;">`;
   } else {
-    content.innerHTML = `<video src="data:${m.mime};base64,${m.data}" controls autoplay playsinline webkit-playsinline style="max-width:100%;max-height:90vh;border-radius:8px;background:#000;"></video>`;
+    const src = m.data ? `data:${m.mime};base64,${m.data}` : mediaPagesUrl(m.url || '');
+    content.innerHTML = `<video src="${src}" controls autoplay playsinline webkit-playsinline style="max-width:100%;max-height:90vh;border-radius:8px;background:#000;"></video>`;
   }
   viewer.style.display = 'flex';
 }
@@ -1315,8 +1322,11 @@ function closeMediaViewer() {
 }
 
 function removePendingMedia(i) {
+  const m = pendingMedia[i];
+  if (m && m.key) { idbDel('m_' + m.key); draftSavedBlobs.delete(m.key); }
   pendingMedia.splice(i, 1);
   renderPendingMedia();
+  scheduleDraftSave();
 }
 
 function fileToBase64(file) {
@@ -1402,7 +1412,10 @@ function clearPendingMusic() {
   if (musicState.kind === 'preview') stopMusic();
   if (pendingMusic && pendingMusic.previewUrl) URL.revokeObjectURL(pendingMusic.previewUrl);
   pendingMusic = null;
+  idbDel('music');
+  draftSavedBlobs.delete('music_key');
   renderPendingMusic();
+  scheduleDraftSave();
 }
 
 function removePendingMusic() {
@@ -1439,6 +1452,7 @@ function addMusic() {
         url: null
       };
       renderPendingMusic();
+      scheduleDraftSave();
       showToast('✅ 音乐已添加，可先试听');
     } catch (err) {
       alert(err.message || '音乐读取失败，请换一首试试');
@@ -1716,6 +1730,7 @@ function addImage() {
     }
     input.value = '';
     renderPendingMedia();
+    scheduleDraftSave();
     showToast('✅ 图片已添加');
   };
   input.click();
@@ -1858,6 +1873,7 @@ function addVideo(isLive = false) {
     }
     input.value = '';
     renderPendingMedia();
+    scheduleDraftSave();
     showToast(isLive ? '✅ 实况已添加（可在播放器里静音）' : '✅ 视频已添加');
   };
   input.click();
@@ -2138,6 +2154,7 @@ function pickLocation(i) {
   btn.textContent = '📍 ' + locText(pickedLocation);
   btn.style.color = '#4b3fa8';
   closeLocationModal();
+  scheduleDraftSave();
 }
 function clearLocation() {
   pickedLocation = null;
@@ -2146,117 +2163,419 @@ function clearLocation() {
   btn.textContent = '不显示位置';
   btn.style.color = '#6c5ce7';
   closeLocationModal();
+  scheduleDraftSave();
+}
+
+// ---- 编辑已有动态 ----
+let editingPostId = null;
+
+function setEditingPost(id) {
+  editingPostId = id;
+  const banner = document.getElementById('edit-banner');
+  if (banner) banner.style.display = id ? 'flex' : 'none';
+  const btn = document.getElementById('publish-btn');
+  if (btn) btn.textContent = id ? '💾 保存修改' : '✨ 发布日记';
+}
+
+async function startEditPost(id) {
+  const post = allPostsCache.find(p => p.id === id);
+  if (!post) return;
+  if (post.authorId !== currentUser.id) { alert('只能编辑自己的动态'); return; }
+  if (overlayStack.includes('detail-view')) closeDetail();
+  pendingMedia = getPostMedia(post).map((m, i) => ({
+    key: 'k' + Date.now() + '_' + i + Math.random().toString(36).slice(2, 6),
+    kind: m.type,
+    url: m.url,
+    thumb: m.type === 'image' ? (m.thumb || null) : null,
+    poster: m.poster || null,
+    live: !!m.live,
+    sound: m.sound !== false,
+    data: null,
+    mime: '',
+    name: ''
+  }));
+  pendingMusic = post.music && post.music.url
+    ? { name: 'music', title: post.music.title || '未命名音乐', duration: post.music.duration || 0, data: null, previewUrl: null, url: post.music.url }
+    : null;
+  pickedWeather = post.weather || '';
+  pickedMood = post.mood || '';
+  document.getElementById('post-text').value = post.text || '';
+  document.getElementById('visibility').value = post.visibility || 'private';
+  onVisChange();
+  if (post.visibility === 'selected') {
+    selectedFriendIds = (post.selectedFriends || []).slice();
+    loadFriendOptions().then(() => {
+      document.querySelectorAll('#friend-options input[type=checkbox]').forEach(cb => {
+        cb.checked = selectedFriendIds.includes(cb.value);
+      });
+    });
+  }
+  pickedLocation = post.location ? { name: post.location.name, addr: post.location.addr || '' } : null;
+  const locBtn = document.getElementById('btn-location');
+  if (pickedLocation) {
+    locBtn.textContent = '📍 ' + locText(pickedLocation);
+    locBtn.style.color = '#4b3fa8';
+  } else {
+    locBtn.textContent = '不显示位置';
+    locBtn.style.color = '#6c5ce7';
+  }
+  renderPendingMedia();
+  renderPendingMusic();
+  syncMoodChips();
+  setEditingPost(id);
+  switchTab('publish');
+  showToast('已进入编辑，改完点「保存修改」');
+}
+
+function cancelEditPost() {
+  if (!editingPostId) return;
+  resetPublishForm();
+  switchTab('feed');
+  showToast('已取消编辑');
+}
+
+function resetPublishForm() {
+  pendingMedia = [];
+  renderPendingMedia();
+  clearPendingMusic();
+  document.getElementById('post-text').value = '';
+  document.getElementById('visibility').value = 'private';
+  onVisChange();
+  pickedWeather = '';
+  pickedMood = '';
+  syncMoodChips();
+  clearLocation();
+  setEditingPost(null);
+  clearDraft();
+}
+
+// 统一上传：已上传过的（编辑时保留的）媒体/音乐直接复用地址
+async function uploadPendingContent() {
+  const music = pendingMusic;
+  const total = pendingMedia.length + (music ? 1 : 0);
+  let done = 0;
+  showUploadProgress(total ? `上传中 0/${total}...` : '处理中...');
+
+  const uploaded = new Array(pendingMedia.length);
+  let nextIndex = 0;
+  const uploadWorker = async () => {
+    while (nextIndex < pendingMedia.length) {
+      const i = nextIndex++;
+      const m = pendingMedia[i];
+      if (m.url) {
+        uploaded[i] = { url: m.url, poster: m.kind === 'video' ? (m.poster || null) : (m.thumb || null) };
+        done++;
+        showUploadProgress(`上传中 ${done}/${total}...`);
+        continue;
+      }
+      const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
+      showUploadProgress(`上传中 ${done}/${total}：${label}${m.kind === 'video' ? '（较大请稍等）' : ''}...`);
+      const extraTask = m.thumb
+        ? ghUploadMedia('thumb.jpg', m.thumb).catch(e => { console.warn('缩略图上传失败', e); return null; })
+        : Promise.resolve(null);
+      const [url, extra] = await Promise.all([ghUploadMedia(m.name, m.data), extraTask]);
+      uploaded[i] = { url, poster: extra };
+      done++;
+      showUploadProgress(`上传中 ${done}/${total}...`);
+    }
+  };
+  const musicTask = (async () => {
+    if (!music) return null;
+    showUploadProgress(`上传中 ${done}/${total}：音乐...`);
+    if (!music.url) music.url = await ghUploadMedia(music.name, music.data, { timeout: 300000 });
+    done++;
+    showUploadProgress(`上传中 ${done}/${total}...`);
+    return { url: music.url, title: music.title, duration: music.duration || 0 };
+  })();
+  const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask]);
+
+  const media = uploaded.map((u, i) => {
+    const m = pendingMedia[i];
+    const item = { type: m.kind, url: u.url };
+    if (m.kind === 'video') {
+      item.live = !!m.live;
+      item.sound = !!m.sound;
+      if (u.poster) item.poster = u.poster;
+    } else if (u.poster) {
+      item.thumb = u.poster;
+    }
+    return item;
+  });
+  return { media, music: results[2] };
 }
 
 async function publishPost() {
   const text = document.getElementById('post-text').value.trim();
   const visibility = document.getElementById('visibility').value;
-  const music = pendingMusic;
+  const editingId = editingPostId;
 
-  if (!text && !pendingMedia.length && !music) {
+  if (!text && !pendingMedia.length && !pendingMusic) {
     alert('请输入内容或添加图片/视频/音乐');
     return;
   }
 
   try {
-    const total = pendingMedia.length + (music ? 1 : 0);
-    let done = 0;
-    showUploadProgress(total ? `上传中 0/${total}...` : '发布中...');
+    const { media, music } = await uploadPendingContent();
+    const now = new Date().toISOString();
 
-    // 2 个并发上传（兼顾速度与 GitHub 提交冲突），封面图与视频同时上传
-    const uploaded = new Array(pendingMedia.length);
-    let nextIndex = 0;
-    const uploadWorker = async () => {
-      while (nextIndex < pendingMedia.length) {
-        const i = nextIndex++;
-        const m = pendingMedia[i];
-        const label = m.kind === 'video' ? (m.live ? '实况' : '视频') : '图片';
-        showUploadProgress(`上传中 ${done}/${total}：${label}${m.kind === 'video' ? '（较大请稍等）' : ''}...`);
-        const extraTask = m.thumb
-          ? ghUploadMedia('thumb.jpg', m.thumb).catch(e => { console.warn('缩略图上传失败', e); return null; })
-          : Promise.resolve(null);
-        const [url, extra] = await Promise.all([ghUploadMedia(m.name, m.data), extraTask]);
-        uploaded[i] = { url, poster: extra };
-        done++;
-        showUploadProgress(`上传中 ${done}/${total}...`);
-      }
-    };
-    // 音乐与媒体同时上传；已上传成功的音乐重试时直接复用地址
-    const musicTask = (async () => {
-      if (!music) return null;
-      showUploadProgress(`上传中 ${done}/${total}：音乐...`);
-      if (!music.url) music.url = await ghUploadMedia(music.name, music.data, { timeout: 300000 });
-      done++;
-      showUploadProgress(`上传中 ${done}/${total}...`);
-      return { url: music.url, title: music.title, duration: music.duration || 0 };
-    })();
-    const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask]);
-    const uploadedMusic = results[2];
+    if (editingId) {
+      const original = allPostsCache.find(p => p.id === editingId);
+      if (!original) throw new Error('这条动态已经不存在了');
+      const editedAt = Array.isArray(original.editedAt) ? original.editedAt.slice() : [];
+      editedAt.push(now);
+      const updated = {
+        ...original,
+        text,
+        media,
+        music,
+        image: (media.find(m => m.type === 'image') || {}).url || null,
+        video: (media.find(m => m.type === 'video') || {}).url || null,
+        visibility,
+        selectedFriends: visibility === 'selected' ? selectedFriendIds.slice() : [],
+        location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
+        weather: pickedWeather || null,
+        mood: pickedMood || null,
+        editedAt
+      };
+      allPostsCache = allPostsCache.map(p => p.id === editingId ? updated : p);
+      await enqueuePostsWrite((serverPosts) => serverPosts.map(sp => sp.id === editingId
+        ? {
+            ...updated,
+            likes: Array.isArray(sp.likes) ? sp.likes : updated.likes,
+            comments: Array.isArray(sp.comments) ? sp.comments : updated.comments,
+            createdAt: sp.createdAt || updated.createdAt
+          }
+        : sp));
+    } else {
+      const post = {
+        id: 'p_' + Date.now(),
+        authorId: currentUser.id,
+        authorName: currentUser.username,
+        authorAvatar: currentUser.avatar || null,
+        text,
+        media,
+        music,
+        image: (media.find(m => m.type === 'image') || {}).url || null,
+        video: (media.find(m => m.type === 'video') || {}).url || null,
+        visibility,
+        selectedFriends: visibility === 'selected' ? selectedFriendIds.slice() : [],
+        // 只保存文字地址，绝不写入经纬度（避免被精确定位）
+        location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
+        likes: [],
+        comments: [],
+        weather: pickedWeather || null,
+        mood: pickedMood || null,
+        createdAt: now
+      };
+      allPostsCache.push(post);
+      loadPosts(); // 刷新界面
+      await enqueuePostsWrite((serverPosts) => {
+        serverPosts.push(post);
+        return serverPosts;
+      });
+    }
 
-    const media = uploaded.map((u, i) => {
-      const m = pendingMedia[i];
-      const item = { type: m.kind, url: u.url };
-      if (m.kind === 'video') {
-        item.live = !!m.live;
-        item.sound = !!m.sound;
-        if (u.poster) item.poster = u.poster;
-      } else if (u.poster) {
-        item.thumb = u.poster;
-      }
-      return item;
-    });
-
-    const post = {
-      id: 'p_' + Date.now(),
-      authorId: currentUser.id,
-      authorName: currentUser.username,
-      authorAvatar: currentUser.avatar || null,
-      text,
-      media,
-      music: uploadedMusic,
-      image: (media.find(m => m.type === 'image') || {}).url || null,
-      video: (media.find(m => m.type === 'video') || {}).url || null,
-      visibility,
-      selectedFriends: visibility === 'selected' ? selectedFriendIds : [],
-      // 只保存文字地址，绝不写入经纬度（避免被精确定位）
-      location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
-      likes: [],
-      comments: [],
-      weather: pickedWeather || null,
-      mood: pickedMood || null,
-      createdAt: new Date().toISOString()
-    };
-
-    // 乐观更新本地缓存
-    allPostsCache.push(post);
-    loadPosts(); // 刷新界面
-
-    // 通过队列写入 GitHub
-    await enqueuePostsWrite((serverPosts) => {
-      serverPosts.push(post);
-      return serverPosts;
-    });
-
-    // Reset form
-    pendingMedia = [];
-    renderPendingMedia();
-    clearPendingMusic();
-    document.getElementById('post-text').value = '';
-    document.getElementById('visibility').value = 'private';
-    pickedWeather = '';
-    pickedMood = '';
-    syncMoodChips();
-    clearLocation();
-
+    stopMusic();
+    resetPublishForm();
     hideUploadProgress();
-    showToast('✅ 发布成功！');
+    showToast(editingId ? '✅ 修改已保存' : '✅ 发布成功！');
     switchTab('feed');
     loadPosts();
   } catch (e) {
     hideUploadProgress();
     renderPendingMusic();
-    alert('发布失败：' + e.message);
+    alert((editingId ? '保存失败：' : '发布失败：') + e.message);
     console.error(e);
+  }
+}
+
+// ---- 发布/编辑草稿：任何原因离开页面都能恢复 ----
+const DRAFT_KEY = 'mlyz_draft_v1';
+let draftSaveTimer = 0;
+let draftRestoring = false;
+const draftSavedBlobs = new Set();
+
+function idbOpen() {
+  return new Promise(resolve => {
+    if (!window.indexedDB) return resolve(null);
+    let req;
+    try { req = indexedDB.open('mlyz_draft', 1); } catch (e) { return resolve(null); }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+async function idbSet(key, val) {
+  const db = await idbOpen();
+  if (!db) return;
+  await new Promise(res => {
+    try {
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(val, key);
+      tx.oncomplete = res; tx.onerror = res; tx.onabort = res;
+    } catch (e) { res(); }
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  if (!db) return null;
+  return new Promise(res => {
+    try {
+      const tx = db.transaction('files', 'readonly');
+      const rq = tx.objectStore('files').get(key);
+      rq.onsuccess = () => res(rq.result || null);
+      rq.onerror = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
+async function idbDel(key) {
+  const db = await idbOpen();
+  if (!db) return;
+  try {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').delete(key);
+  } catch (e) {}
+}
+async function idbClear() {
+  const db = await idbOpen();
+  if (!db) return;
+  try {
+    const tx = db.transaction('files', 'readwrite');
+    tx.objectStore('files').clear();
+  } catch (e) {}
+}
+
+function formHasContent() {
+  const ta = document.getElementById('post-text');
+  return !!((ta && ta.value.trim()) || pendingMedia.length || pendingMusic);
+}
+
+function scheduleDraftSave() {
+  clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => { saveDraftNow(); }, 600);
+}
+
+async function saveDraftNow() {
+  if (!currentUser) return;
+  if (!formHasContent()) { clearDraft(); return; }
+  const data = {
+    v: 1,
+    editingPostId,
+    text: document.getElementById('post-text').value,
+    visibility: document.getElementById('visibility').value,
+    selectedFriends: selectedFriendIds.slice(),
+    weather: pickedWeather,
+    mood: pickedMood,
+    location: pickedLocation ? { name: pickedLocation.name, addr: pickedLocation.addr || '' } : null,
+    music: pendingMusic
+      ? { name: pendingMusic.name, title: pendingMusic.title, duration: pendingMusic.duration || 0, url: pendingMusic.url || null }
+      : null,
+    media: pendingMedia.map(m => ({
+      key: m.key,
+      kind: m.kind,
+      url: m.url || null,
+      thumb: m.url ? (m.thumb || m.poster || null) : null,
+      live: !!m.live,
+      sound: m.sound !== false,
+      hasData: !!m.data
+    })),
+    updatedAt: Date.now()
+  };
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch (e) {}
+  for (const m of pendingMedia) {
+    if (!m.data || draftSavedBlobs.has(m.key)) continue;
+    await idbSet('m_' + m.key, { data: m.data, mime: m.mime || 'image/jpeg', thumb: m.thumb || '' });
+    draftSavedBlobs.add(m.key);
+  }
+  if (pendingMusic && pendingMusic.data && !draftSavedBlobs.has('music_key')) {
+    await idbSet('music', { data: pendingMusic.data, name: pendingMusic.name, mime: pendingMusic.mime || '' });
+    draftSavedBlobs.add('music_key');
+  }
+}
+
+function clearDraft() {
+  clearTimeout(draftSaveTimer);
+  draftSavedBlobs.clear();
+  try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+  idbClear();
+}
+
+async function maybeRestoreDraft() {
+  if (draftRestoring || editingPostId || formHasContent()) return;
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) { return; }
+  if (!d || d.v !== 1) return;
+  draftRestoring = true;
+  try {
+    const media = [];
+    for (const item of (d.media || [])) {
+      const rec = item.hasData ? await idbGet('m_' + item.key) : null;
+      if (!item.url && !rec) continue;
+      media.push({
+        key: item.key,
+        kind: item.kind,
+        url: item.url || null,
+        thumb: rec ? (rec.thumb || '') : (item.thumb || null),
+        poster: null,
+        live: !!item.live,
+        sound: item.sound !== false,
+        data: rec ? rec.data : null,
+        mime: rec ? rec.mime : '',
+        name: ''
+      });
+    }
+    let music = null;
+    if (d.music) {
+      const rec = await idbGet('music');
+      if (d.music.url || (rec && rec.data)) {
+        music = {
+          name: (rec && rec.name) || 'music.mp3',
+          title: d.music.title || '未命名音乐',
+          duration: d.music.duration || 0,
+          data: rec ? rec.data : null,
+          previewUrl: null,
+          url: d.music.url || null
+        };
+      }
+    }
+    pendingMedia = media;
+    pendingMusic = music;
+    pickedWeather = d.weather || '';
+    pickedMood = d.mood || '';
+    document.getElementById('post-text').value = d.text || '';
+    document.getElementById('visibility').value = d.visibility || 'private';
+    onVisChange();
+    selectedFriendIds = Array.isArray(d.selectedFriends) ? d.selectedFriends.slice() : [];
+    if (d.visibility === 'selected') {
+      loadFriendOptions().then(() => {
+        document.querySelectorAll('#friend-options input[type=checkbox]').forEach(cb => {
+          cb.checked = selectedFriendIds.includes(cb.value);
+        });
+      });
+    }
+    pickedLocation = d.location ? { name: d.location.name, addr: d.location.addr || '' } : null;
+    const locBtn = document.getElementById('btn-location');
+    if (pickedLocation) {
+      locBtn.textContent = '📍 ' + locText(pickedLocation);
+      locBtn.style.color = '#4b3fa8';
+    } else {
+      locBtn.textContent = '不显示位置';
+      locBtn.style.color = '#6c5ce7';
+    }
+    renderPendingMedia();
+    renderPendingMusic();
+    syncMoodChips();
+    if (d.editingPostId && allPostsCache.some(p => p.id === d.editingPostId)) {
+      setEditingPost(d.editingPostId);
+    }
+    showToast('已恢复上次未完成的内容');
+  } catch (e) {
+    console.warn('草稿恢复失败', e);
+  } finally {
+    draftRestoring = false;
   }
 }
 
@@ -2285,6 +2604,7 @@ async function loadFriendOptions() {
 function toggleFriend(cb) {
   if (cb.checked) selectedFriendIds.push(cb.value);
   else selectedFriendIds = selectedFriendIds.filter(id => id !== cb.value);
+  scheduleDraftSave();
 }
 
 // ---- Friends page ----
@@ -3357,7 +3677,7 @@ function switchTab(tab) {
   document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
   const manageBtn = document.getElementById('btn-manage');
   if (manageBtn) manageBtn.style.display = (tab === 'feed' && !manageMode) ? 'inline-block' : 'none';
-  if (tab === 'publish') loadFriendOptions();
+  if (tab === 'publish') { loadFriendOptions(); maybeRestoreDraft(); }
   if (tab === 'friends') { loadFriendsPage(); loadNotifications(); }
   if (tab === 'settings') loadSettings();
   if (tab === 'feed') loadPosts();
@@ -3391,6 +3711,7 @@ function onVisChange() {
   const friendBox = document.getElementById('friend-options');
   friendBox.style.display = v === 'selected' ? 'block' : 'none';
   selectedFriendIds = [];
+  scheduleDraftSave();
 }
 
 // ---- 今日天气 / 此时心情 ----
@@ -3438,3 +3759,13 @@ window.addEventListener('DOMContentLoaded', () => {
   if (currentUser) showApp();
   else showAuth();
 });
+
+// 草稿：输入即记录；离开页面 / 切到后台 / 关闭 App 前再保存一次
+(function bindDraftAutosave() {
+  const ta = document.getElementById('post-text');
+  if (ta) ta.addEventListener('input', scheduleDraftSave);
+  window.addEventListener('pagehide', () => { if (currentUser && formHasContent()) saveDraftNow(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && currentUser && formHasContent()) saveDraftNow();
+  });
+})();

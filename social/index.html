@@ -69,6 +69,10 @@
     <!-- 发布页 -->
     <section id="tab-publish" class="tab-content" style="display:none;">
       <div class="publish-card">
+        <div id="edit-banner" style="display:none;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;border-radius:12px;background:linear-gradient(120deg,rgba(122,99,240,0.16),rgba(255,120,210,0.14));border:1px solid rgba(255,255,255,0.7);color:#5b47c8;font-size:13px;">
+          <span style="flex:1;">✏️ 正在编辑这条动态</span>
+          <button onclick="cancelEditPost()" style="border:none;background:rgba(255,255,255,0.75);color:#6c5ce7;font-size:12px;padding:4px 10px;border-radius:8px;cursor:pointer;">取消</button>
+        </div>
         <textarea id="post-text" rows="5" placeholder="今天发生了什么？写下来吧...✨"></textarea>
 
         <div id="media-preview" style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin:10px 0;"></div>
@@ -125,7 +129,7 @@
         <input type="file" id="video-input" accept="video/*" multiple style="display:none;">
         <input type="file" id="music-input" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/x-wav,.mp3,.m4a,.aac,.wav" style="display:none;">
 
-        <button class="primary-btn publish-btn" onclick="publishPost()">✨ 发布日记</button>
+        <button id="publish-btn" class="primary-btn publish-btn" onclick="publishPost()">✨ 发布日记</button>
       </div>
     </section>
 
@@ -367,7 +371,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 102;
+const CURRENT_V = 103;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -401,6 +405,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=102"></script>
+<script src="app.js?v=103"></script>
 </body>
 </html>
