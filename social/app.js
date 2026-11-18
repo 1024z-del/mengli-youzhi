@@ -25,7 +25,7 @@ async function ghGetFile(path) {
   return { content, sha: j.sha };
 }
 
-async function ghPutFile(path, data, sha) {
+async function ghPutFile(path, data, sha, options) {
   const url = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/${path}`;
   const body = {
     message: `update ${path}`,
@@ -38,8 +38,8 @@ async function ghPutFile(path, data, sha) {
   if (r.status === 409) {
     const fresh = await ghGetFile(path);
     body.sha = fresh.sha;
-    // merge: if data is array, combine with fresh content
-    if (Array.isArray(data) && Array.isArray(fresh.content)) {
+    // merge: if data is array, combine with fresh content（覆盖模式除外）
+    if (!(options && options.replace) && Array.isArray(data) && Array.isArray(fresh.content)) {
       const existing = fresh.content;
       const existingIds = new Set(existing.map(x => x.id));
       for (const item of data) {
@@ -2549,10 +2549,20 @@ function openLikedPost(postId) {
 }
 
 // ---- 回收站 ----
+let trashCache = [];
+let trashSha = null;
+let trashLoaded = false;
+let trashVersion = 0;
+
 async function openTrashModal() {
   document.getElementById('trash-modal').style.display = 'flex';
   openOverlay('trash-modal');
-  await loadTrashList();
+  if (trashLoaded) {
+    renderTrashList();
+  } else {
+    document.getElementById('trash-list').innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:20px 0;">加载中...</p>';
+  }
+  loadTrashList();
 }
 
 function closeTrashModal() {
@@ -2560,8 +2570,25 @@ function closeTrashModal() {
 }
 
 async function loadTrashList() {
-  const { content: trash } = await ghGetFile('data/trash.json');
-  const myTrash = (trash || []).filter(t => t.authorId === currentUser.id);
+  const version = trashVersion;
+  try {
+    const { content, sha } = await ghGetFile('data/trash.json');
+    // 期间若删除或恢复了某条，丢弃这次拉到的旧数据
+    if (version !== trashVersion) return;
+    trashCache = content || [];
+    trashSha = sha;
+    trashLoaded = true;
+    renderTrashList();
+  } catch (e) {
+    console.error('读取回收站失败', e);
+    if (!trashLoaded) {
+      document.getElementById('trash-list').innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:20px 0;">加载失败，请稍后重试</p>';
+    }
+  }
+}
+
+function renderTrashList() {
+  const myTrash = trashCache.filter(t => t.authorId === currentUser.id);
   const container = document.getElementById('trash-list');
   if (!myTrash.length) {
     container.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:20px 0;">回收站是空的</p>';
@@ -2589,35 +2616,64 @@ async function loadTrashList() {
   }).join('');
 }
 
+// 回收站写入：优先复用已拿到的 sha，避免每次操作多一次读取
+async function writeTrashCache() {
+  if (!trashSha) trashSha = (await ghGetFile('data/trash.json')).sha;
+  // 回收站是整体覆盖，冲突时直接用本地这份重写，避免把刚删的条目合并回来
+  trashSha = (await ghPutFile('data/trash.json', trashCache, trashSha, { replace: true })) || null;
+}
+
 async function restoreTrashItem(postId) {
   if (!confirm('确定恢复这篇日记吗？')) return;
-  const { content: trash, sha: trashSha } = await ghGetFile('data/trash.json');
-  const item = (trash || []).find(t => t.id === postId);
+  const item = trashCache.find(t => t.id === postId);
   if (!item) return;
-  // 从回收站移除
-  const newTrash = trash.filter(t => t.id !== postId);
-  await ghPutFile('data/trash.json', newTrash, trashSha);
-  // 加回 posts.json（通过队列）
+  const prevCache = trashCache;
+  const prevSha = trashSha;
   const { deletedAt, ...restored } = item;
-  allPostsCache.push(restored);
-  await enqueuePostsWrite((serverPosts) => {
-    if (!serverPosts.find(p => p.id === restored.id)) {
-      serverPosts.push(restored);
-    }
-    return serverPosts;
-  });
-  showToast('♻️ 已恢复');
-  loadTrashList();
-  loadPosts();
+  // 先在界面上立刻恢复，网络写入放到后面
+  trashCache = trashCache.filter(t => t.id !== postId);
+  trashVersion++;
+  renderTrashList();
+  if (!allPostsCache.find(p => p.id === restored.id)) allPostsCache.push(restored);
+  renderFeed();
+  try {
+    await writeTrashCache();
+    await enqueuePostsWrite(serverPosts => {
+      if (!serverPosts.find(p => p.id === restored.id)) serverPosts.push(restored);
+      return serverPosts;
+    });
+    showToast('♻️ 已恢复');
+  } catch (e) {
+    console.error('恢复失败', e);
+    trashCache = prevCache;
+    trashSha = prevSha;
+    trashVersion++;
+    allPostsCache = allPostsCache.filter(p => p.id !== restored.id);
+    renderTrashList();
+    renderFeed();
+    alert('恢复失败，请检查网络后重试');
+  }
 }
 
 async function permanentDeleteTrash(postId) {
   if (!confirm('确定永久删除吗？删除后无法恢复！')) return;
-  const { content: trash, sha } = await ghGetFile('data/trash.json');
-  const newTrash = trash.filter(t => t.id !== postId);
-  await ghPutFile('data/trash.json', newTrash, sha);
-  showToast('✅ 已永久删除');
-  loadTrashList();
+  const prevCache = trashCache;
+  const prevSha = trashSha;
+  // 先立刻从界面移除，再写云端
+  trashCache = trashCache.filter(t => t.id !== postId);
+  trashVersion++;
+  renderTrashList();
+  try {
+    await writeTrashCache();
+    showToast('✅ 已永久删除');
+  } catch (e) {
+    console.error('永久删除失败', e);
+    trashCache = prevCache;
+    trashSha = prevSha;
+    trashVersion++;
+    renderTrashList();
+    alert('删除失败，请检查网络后重试');
+  }
 }
 
 // 自动清理超过 30 天的回收站
