@@ -1183,18 +1183,107 @@ function pendingMediaThumb(m) {
 function renderPendingMedia() {
   const box = document.getElementById('media-preview');
   if (!box) return;
+  pendingMedia.forEach(m => { if (!m.key) m.key = 'k' + Date.now() + '_' + Math.random().toString(36).slice(2, 7); });
   box.innerHTML = pendingMedia.map((m, i) => {
     const thumb = pendingMediaThumb(m);
     return `
-    <div style="position:relative;flex:0 0 auto;" onclick="previewPendingMedia(${i})">
+    <div class="media-item" data-key="${m.key}" data-index="${i}" onclick="previewPendingMedia(${i})">
       ${thumb
-        ? `<img src="${thumb}" style="width:88px;height:88px;border-radius:10px;object-fit:cover;display:block;cursor:zoom-in;">`
+        ? `<img src="${thumb}" style="width:88px;height:88px;border-radius:10px;object-fit:cover;display:block;cursor:zoom-in;pointer-events:none;">`
         : `<div style="width:88px;height:88px;border-radius:10px;background:#2b2140;color:#cfc6ff;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:zoom-in;">${m.kind === 'video' ? '🎬 视频' : '🖼️ 图片'}</div>`}
       <button onclick="event.stopPropagation();removePendingMedia(${i})" style="position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(255,71,87,0.95);color:#fff;font-size:12px;line-height:22px;padding:0;cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,.35);">✕</button>
       ${m.kind === 'video' && m.live ? '<span class="live-badge" style="top:auto;bottom:3px;left:3px;font-size:10px;padding:1px 6px;">实况</span>' : ''}
     </div>
   `;
   }).join('');
+  initMediaDrag();
+}
+
+// ---- 长按拖动排序 ----
+let dragCtx = null;
+let suppressMediaTap = false;
+
+function initMediaDrag() {
+  const box = document.getElementById('media-preview');
+  if (!box || box.dataset.dragReady) return;
+  box.dataset.dragReady = '1';
+  box.addEventListener('pointerdown', onMediaPointerDown);
+  window.addEventListener('pointermove', onMediaPointerMove, { passive: false });
+  window.addEventListener('pointerup', endMediaDrag);
+  window.addEventListener('pointercancel', endMediaDrag);
+  window.addEventListener('touchmove', e => {
+    if (dragCtx && dragCtx.active) e.preventDefault();
+  }, { passive: false });
+  box.addEventListener('click', e => {
+    if (!suppressMediaTap) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
+}
+
+function onMediaPointerDown(e) {
+  if (e.button > 0) return;
+  const item = e.target.closest('.media-item');
+  if (!item || e.target.closest('button')) return;
+  dragCtx = {
+    item,
+    startX: e.clientX,
+    startY: e.clientY,
+    active: false,
+    timer: setTimeout(() => {
+      if (!dragCtx) return;
+      dragCtx.active = true;
+      dragCtx.item.classList.add('dragging');
+      const box = document.getElementById('media-preview');
+      if (box) box.classList.add('drag-active');
+      suppressMediaTap = true;
+      try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
+    }, 380)
+  };
+}
+
+function onMediaPointerMove(e) {
+  const ctx = dragCtx;
+  if (!ctx) return;
+  if (!ctx.active) {
+    if (Math.abs(e.clientX - ctx.startX) > 10 || Math.abs(e.clientY - ctx.startY) > 10) {
+      clearTimeout(ctx.timer);
+      dragCtx = null;
+    }
+    return;
+  }
+  e.preventDefault();
+  const box = document.getElementById('media-preview');
+  if (!box) return;
+  const others = Array.from(box.querySelectorAll('.media-item')).filter(el => el !== ctx.item);
+  const target = others.find(el => {
+    const r = el.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  });
+  if (!target) return;
+  const r = target.getBoundingClientRect();
+  const before = e.clientX < r.left + r.width / 2;
+  box.insertBefore(ctx.item, before ? target : target.nextSibling);
+}
+
+function endMediaDrag() {
+  const ctx = dragCtx;
+  dragCtx = null;
+  if (!ctx) return;
+  clearTimeout(ctx.timer);
+  if (!ctx.active) return;
+  ctx.item.classList.remove('dragging');
+  const box = document.getElementById('media-preview');
+  if (box) box.classList.remove('drag-active');
+  const keys = Array.from((box || document).querySelectorAll('.media-item')).map(el => el.dataset.key);
+  const map = new Map(pendingMedia.map(m => [m.key, m]));
+  const reordered = keys.map(k => map.get(k)).filter(Boolean);
+  if (reordered.length === pendingMedia.length) {
+    pendingMedia = reordered;
+    renderPendingMedia();
+  }
+  setTimeout(() => { suppressMediaTap = false; }, 60);
+  if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
 }
 
 function previewPendingMedia(i) {
