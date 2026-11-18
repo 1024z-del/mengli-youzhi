@@ -3720,6 +3720,8 @@ function switchTab(tab) {
   document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add('active');
   const manageBtn = document.getElementById('btn-manage');
   if (manageBtn) manageBtn.style.display = (tab === 'feed' && !manageMode) ? 'inline-block' : 'none';
+  const clearBtn = document.getElementById('btn-clear-publish');
+  if (clearBtn) clearBtn.style.display = tab === 'publish' ? 'flex' : 'none';
   if (tab === 'publish') { loadFriendOptions(); maybeRestoreDraft(); }
   if (tab === 'friends') { loadFriendsPage(); loadNotifications(); }
   if (tab === 'settings') loadSettings();
