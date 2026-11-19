@@ -1384,6 +1384,11 @@ let musicAudio = null;
 let musicPlayOp = 0;
 const musicState = { kind: null, id: null, sources: [], sourceIndex: 0, loading: false };
 
+function formatMusicDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
 // ---- 语音录音 ----
 let pendingVoice = null; // { data, mime, duration, name, url, previewUrl }
 let voiceRecorder = null;
