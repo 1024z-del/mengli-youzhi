@@ -1491,27 +1491,87 @@ function renderPendingVoice() {
   if (!box) return;
   if (!pendingVoice) { box.innerHTML = ''; return; }
   const dur = formatMusicDuration(pendingVoice.duration);
+  const title = pendingVoice.title || '语音';
+  const playing = voicePreviewAudio && !voicePreviewAudio.paused;
+  const icon = playing ? MUSIC_ICONS.pause : MUSIC_ICONS.play;
   box.innerHTML = `<div class="music-bar static" onclick="event.stopPropagation()">
-    <button class="music-play" onclick="event.stopPropagation();previewPendingVoice()" aria-label="试听语音">${MUSIC_ICONS.play}</button>
+    <button class="music-play" data-voice-preview-button onclick="event.stopPropagation();previewPendingVoice()" aria-label="试听语音">${icon}</button>
     <div class="music-info">
-      <div class="music-title">🎙️ 语音</div>
+      <div class="music-title" id="pending-voice-title" style="user-select:none;cursor:text;">${escapeHtml(title)}</div>
       <div class="music-duration">${dur}</div>
     </div>
     <button class="music-remove" onclick="event.stopPropagation();removeVoice()" aria-label="移除语音">✕</button>
   </div>`;
+  bindVoiceTitleLongPress();
+}
+
+function bindVoiceTitleLongPress() {
+  const el = document.getElementById('pending-voice-title');
+  if (!el) return;
+  let timer = null;
+  const clear = () => { if (timer) { clearTimeout(timer); timer = null; } };
+  const start = (e) => {
+    clear();
+    timer = setTimeout(() => {
+      timer = null;
+      e.preventDefault && e.preventDefault();
+      const cur = pendingVoice && pendingVoice.title || '语音';
+      const val = prompt('给这段语音起个名字', cur);
+      if (val !== null) {
+        const t = val.trim().slice(0, 30);
+        if (pendingVoice) {
+          pendingVoice.title = t || '语音';
+          renderPendingVoice();
+          if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+        }
+      }
+    }, 650);
+  };
+  el.addEventListener('pointerdown', start);
+  el.addEventListener('pointerup', clear);
+  el.addEventListener('pointerleave', clear);
+  el.addEventListener('pointercancel', clear);
+  el.addEventListener('contextmenu', e => { e.preventDefault(); start(e); }, { once: true });
 }
 
 function previewPendingVoice() {
   if (!pendingVoice || !pendingVoice.previewUrl) return;
   if (voicePreviewAudio && voicePreviewAudio.src === pendingVoice.previewUrl) {
-    if (voicePreviewAudio.paused) { voicePreviewAudio.play(); } else { voicePreviewAudio.pause(); }
+    if (voicePreviewAudio.paused) {
+      voicePreviewAudio.play().catch(() => {});
+    } else {
+      voicePreviewAudio.pause();
+    }
+    syncVoicePreviewButton();
     return;
   }
-  if (voicePreviewAudio) { try { voicePreviewAudio.pause(); URL.revokeObjectURL(voicePreviewAudio.src); } catch (e) {} }
+  if (voicePreviewAudio) {
+    try { voicePreviewAudio.pause(); URL.revokeObjectURL(voicePreviewAudio.src); } catch (e) {}
+  }
   voicePreviewAudio = new Audio(pendingVoice.previewUrl);
-  voicePreviewAudio.onended = () => { voicePreviewAudio = null; renderPendingVoice(); };
-  voicePreviewAudio.play();
+  voicePreviewAudio.preload = 'none';
+  voicePreviewAudio.onplay = () => syncVoicePreviewButton();
+  voicePreviewAudio.onpause = () => syncVoicePreviewButton();
+  voicePreviewAudio.onended = () => {
+    voicePreviewAudio = null;
+    renderPendingVoice();
+  };
+  voicePreviewAudio.onerror = () => {
+    showToast('语音试听失败');
+    voicePreviewAudio = null;
+    renderPendingVoice();
+  };
+  voicePreviewAudio.play().catch(err => {
+    console.warn('[voice] play() failed', err);
+  });
   renderPendingVoice();
+}
+
+function syncVoicePreviewButton() {
+  const btn = document.querySelector('[data-voice-preview-button]');
+  if (!btn) return;
+  const playing = voicePreviewAudio && !voicePreviewAudio.paused && !voicePreviewAudio.ended;
+  btn.innerHTML = playing ? MUSIC_ICONS.pause : MUSIC_ICONS.play;
 }
 
 function removeVoice() {
@@ -2468,7 +2528,7 @@ async function startEditPost(id) {
     ? { name: 'music', title: post.music.title || '未命名音乐', duration: post.music.duration || 0, data: null, previewUrl: null, url: post.music.url }
     : null;
   pendingVoice = post.voice && post.voice.url
-    ? { name: 'voice', duration: post.voice.duration || 0, data: null, previewUrl: null, url: post.voice.url }
+    ? { name: 'voice', title: post.voice.title || '语音', duration: post.voice.duration || 0, data: null, previewUrl: null, url: post.voice.url }
     : null;
   renderPendingVoice();
   pickedWeather = metaList(post.weather);
@@ -2569,7 +2629,7 @@ async function uploadPendingContent() {
     if (!voice.url) voice.url = await ghUploadMedia(voice.name, voice.data, { timeout: 300000 });
     done++;
     showUploadProgress(`上传中 ${done}/${total}...`);
-    return { url: voice.url, duration: voice.duration || 0 };
+    return { url: voice.url, title: voice.title || '语音', duration: voice.duration || 0 };
   })();
   const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask, voiceTask]);
 
@@ -2761,7 +2821,7 @@ async function saveDraftNow() {
       ? { name: pendingMusic.name, title: pendingMusic.title, duration: pendingMusic.duration || 0, url: pendingMusic.url || null }
       : null,
     voice: pendingVoice
-      ? { name: pendingVoice.name, duration: pendingVoice.duration || 0, url: pendingVoice.url || null }
+      ? { name: pendingVoice.name, title: pendingVoice.title || '语音', duration: pendingVoice.duration || 0, url: pendingVoice.url || null }
       : null,
     media: pendingMedia.map(m => ({
       key: m.key,
@@ -2856,6 +2916,7 @@ async function maybeRestoreDraft() {
       if (d.voice.url || (rec && rec.data)) {
         voice = {
           name: (rec && rec.name) || d.voice.name || 'voice.webm',
+          title: d.voice.title || '语音',
           duration: d.voice.duration || 0,
           data: rec ? rec.data : null,
           previewUrl: null,
