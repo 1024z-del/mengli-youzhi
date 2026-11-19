@@ -1427,12 +1427,13 @@ function startRecording() {
   navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
     voiceStream = stream;
     const mime = pickAudioMime();
-    const rec = mime ? new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48000 }) : new MediaRecorder(stream);
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
     voiceRecorder = rec;
     voiceStartTime = Date.now();
     rec.ondataavailable = e => { if (e.data && e.data.size > 0) voiceChunks.push(e.data); };
     rec.onstop = onVoiceStopped;
-    rec.start(500); // 每 0.5 秒切一片，避免长时间录内存炸掉
+    rec.onerror = () => { showToast('录音过程出错，请重试'); stopRecording(); };
+    rec.start();
     const btn = document.getElementById('btn-voice-record');
     if (btn) { btn.classList.add('recording'); btn.textContent = '⏹ 停止录音'; }
     showToast('正在录音…');
@@ -1452,22 +1453,32 @@ function stopRecording() {
 async function onVoiceStopped() {
   const btn = document.getElementById('btn-voice-record');
   if (btn) { btn.classList.remove('recording'); btn.textContent = '🎙️ 录音'; }
-  if (!voiceChunks.length) { showToast('录音为空'); return; }
-  const blob = new Blob(voiceChunks, { type: pickAudioMime() || 'audio/webm' });
-  voiceChunks = [];
-  if (blob.size > 30 * 1024 * 1024) { showToast('录音太大（单个最大 30MB）'); return; }
-  const duration = (Date.now() - voiceStartTime) / 1000;
-  const previewUrl = URL.createObjectURL(blob);
-  // 转 base64 存 pendingVoice（发出版本走上传）
-  const data = await fileToBase64(blob);
-  const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
-  pendingVoice = {
-    data, mime: blob.type, duration,
-    name: `voice_${Date.now()}.${ext}`,
-    previewUrl
-  };
-  renderPendingVoice();
-  if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+  try {
+    if (!voiceChunks.length) { showToast('录音为空，请重新录'); return; }
+    const blob = new Blob(voiceChunks, { type: voiceChunks[0].type || pickAudioMime() || 'audio/webm' });
+    voiceChunks = [];
+    if (blob.size > 30 * 1024 * 1024) { showToast('录音太大（单个最大 30MB）'); return; }
+    if (blob.size < 500) { showToast('录音太短，请重新录'); return; }
+    const duration = Math.max(1, (Date.now() - voiceStartTime) / 1000);
+    const previewUrl = URL.createObjectURL(blob);
+    const data = await fileToBase64(blob);
+    const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+    if (pendingVoice && pendingVoice.previewUrl) URL.revokeObjectURL(pendingVoice.previewUrl);
+    pendingVoice = {
+      data, mime: blob.type, duration,
+      name: `voice_${Date.now()}.${ext}`,
+      previewUrl,
+      title: '语音' // 默认标题，用户可改
+    };
+    console.log('[voice] 录音完成', { duration, size: blob.size, mime: blob.type });
+    renderPendingVoice();
+    showToast('✅ 录音完成，可试听或发布');
+    if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+  } catch (err) {
+    console.error('[voice] 处理录音失败', err);
+    showToast('录音处理失败：' + (err && err.message ? err.message : '请重试'));
+    voiceChunks = [];
+  }
 }
 
 function renderPendingVoice() {
@@ -1803,11 +1814,12 @@ function voiceBarHtml(post) {
   if (!post.voice) return '';
   const hasAudio = typeof post.voice.url === 'string' && post.voice.url;
   if (!hasAudio) return '';
+  const title = typeof post.voice.title === 'string' && post.voice.title ? post.voice.title : '语音';
   const dur = formatMusicDuration(post.voice.duration);
-  return `<div class="music-bar voice-bar" onclick="event.stopPropagation()">
+  return `<div class="music-bar" onclick="event.stopPropagation()">
     <button class="music-play" data-voice-button="${post.id}" onclick="event.stopPropagation();togglePostVoice('${post.id}')" aria-label="播放语音">${MUSIC_ICONS.play}</button>
     <div class="music-info">
-      <div class="music-title">🎙️ 语音</div>
+      <div class="music-title">${escapeHtml(title)}</div>
       <div class="music-duration">${dur}</div>
     </div>
     <span class="music-eq" aria-hidden="true"><i></i><i></i><i></i></span>
