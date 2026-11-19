@@ -721,7 +721,7 @@ function renderFeed(posts) {
       </div>
     </div>
   `;}).join('');
-  syncMusicButtons();
+  syncMusicButtons(); syncVoiceButtons();
 }
 
 function getAvatarHtml(name, avatarUrl, userId) {
@@ -937,7 +937,7 @@ function renderPostDetail(id) {
     </div>
     <button onclick="closeDetail()" class="btn-secondary">返回</button>
   `;
-  syncMusicButtons();
+  syncMusicButtons(); syncVoiceButtons();
 }
 
 // ---- 评论（乐观更新） ----
@@ -1193,7 +1193,7 @@ function renderUserPage(userId, user, posts) {
       <button onclick="closeUserPage()" class="btn-secondary" style="margin-top:12px;">返回</button>
     </div>
   `;
-  syncMusicButtons();
+  syncMusicButtons(); syncVoiceButtons();
 }
 
 function closeUserPage() {
@@ -1494,13 +1494,16 @@ function renderPendingVoice() {
   const title = pendingVoice.title || '语音';
   const playing = voicePreviewAudio && !voicePreviewAudio.paused;
   const icon = playing ? MUSIC_ICONS.pause : MUSIC_ICONS.play;
-  box.innerHTML = `<div class="music-bar static" onclick="event.stopPropagation()">
-    <button class="music-play" data-voice-preview-button onclick="event.stopPropagation();previewPendingVoice()" aria-label="试听语音">${icon}</button>
+  box.innerHTML = `<div class="music-bar pending-music-bar" onclick="event.stopPropagation()">
+    <button class="music-play ${playing ? 'playing' : ''}" data-voice-preview-button onclick="event.stopPropagation();previewPendingVoice()" aria-label="试听语音">${icon}</button>
     <div class="music-info">
       <div class="music-title" id="pending-voice-title" style="user-select:none;cursor:text;">${escapeHtml(title)}</div>
       <div class="music-duration">${dur}</div>
     </div>
-    <button class="music-remove" onclick="event.stopPropagation();removeVoice()" aria-label="移除语音">✕</button>
+    <span class="music-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+    <div class="pending-music-actions">
+      <button onclick="event.stopPropagation();removeVoice()">移除</button>
+    </div>
   </div>`;
   bindVoiceTitleLongPress();
 }
@@ -1892,11 +1895,46 @@ function voiceBarHtml(post) {
 }
 
 function syncVoiceButtons() {
+  const playing = !!(currentVoiceAudio && !currentVoiceAudio.paused && !currentVoiceAudio.ended);
   document.querySelectorAll('[data-voice-button]').forEach(btn => {
     const id = btn.dataset.voiceButton;
-    const isActive = currentPlayingVoiceId === id && currentVoiceAudio && !currentVoiceAudio.paused;
-    const loading = currentPlayingVoiceId === id && voiceState.loading;
-    btn.innerHTML = loading ? MUSIC_ICONS.loading : (isActive ? MUSIC_ICONS.pause : MUSIC_ICONS.play);
+    const active = currentPlayingVoiceId === id;
+    const isPlaying = active && playing;
+    const loading = active && voiceState.loading;
+    btn.innerHTML = loading ? MUSIC_ICONS.loading : (isPlaying ? MUSIC_ICONS.pause : MUSIC_ICONS.play);
+    btn.classList.toggle('loading', loading);
+    btn.classList.toggle('playing', isPlaying);
+    btn.setAttribute('aria-label', isPlaying ? '暂停语音' : '播放语音');
+    const bar = btn.closest('.music-bar');
+    if (bar) bar.classList.toggle('playing', isPlaying);
+  });
+  // 发布页试听按钮
+  const previewBtn = document.querySelector('[data-voice-preview-button]');
+  if (previewBtn) {
+    const playingPrev = voicePreviewAudio && !voicePreviewAudio.paused && !voicePreviewAudio.ended;
+    previewBtn.innerHTML = playingPrev ? MUSIC_ICONS.pause : MUSIC_ICONS.play;
+    previewBtn.classList.toggle('playing', playingPrev);
+    previewBtn.setAttribute('aria-label', playingPrev ? '暂停试听' : '试听语音');
+    const bar = previewBtn.closest('.music-bar');
+    if (bar) bar.classList.toggle('playing', playingPrev);
+  }
+}
+
+function updateVoiceProgress() {
+  if (!currentVoiceAudio || !currentPlayingVoiceId) return;
+  const cur = currentVoiceAudio.currentTime || 0;
+  const total = currentVoiceAudio.duration || 0;
+  const ratio = total > 0 ? Math.min(1, cur / total) : 0;
+  document.querySelectorAll(`[data-voice-button="${currentPlayingVoiceId}"]`).forEach(btn => {
+    const bar = btn.closest('.music-bar');
+    if (bar) bar.style.setProperty('--music-progress', ratio.toFixed(4));
+  });
+}
+
+function resetVoiceProgress() {
+  document.querySelectorAll('[data-voice-button]').forEach(btn => {
+    const bar = btn.closest('.music-bar');
+    if (bar) bar.style.setProperty('--music-progress', 0);
   });
 }
 
@@ -1939,6 +1977,7 @@ async function togglePostVoice(postId) {
       stopCurrentVoice();
     }
   };
+  audio.ontimeupdate = () => { if (op === voicePlayOp) updateVoiceProgress(); };
   audio.onerror = async () => {
     if (op !== voicePlayOp) return;
     voiceState.sourceIndex++;
@@ -1966,6 +2005,7 @@ function stopCurrentVoice() {
   voiceState.loading = false;
   voiceState.sources = [];
   voiceState.sourceIndex = 0;
+  resetVoiceProgress();
   syncVoiceButtons();
 }
 
