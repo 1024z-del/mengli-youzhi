@@ -408,6 +408,8 @@ function setUser(u) {
 function logout() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   stopMusic();
+  stopCurrentVoice();
+  stopRecording();
   currentUser = null;
   localStorage.removeItem('mlyz_user');
   showAuth();
@@ -703,6 +705,7 @@ function renderFeed(posts) {
         </div>
       </div>
       ${mediaListHtml(p, 'post')}
+      ${voiceBarHtml(p)}
       ${musicBarHtml(p)}
       ${postTextHtml(p)}
       ${postMetaHtml(p)}
@@ -750,7 +753,11 @@ function escapeHtml(s) {
 
 function formatTime(t) {
   const d = new Date(t);
-  return `${d.getMonth()+1}月${d.getDate()}日 ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const md = `${d.getMonth()+1}月${d.getDate()}日`;
+  const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return sameYear ? `${md} ${hm}` : `${d.getFullYear()}年${md} ${hm}`;
 }
 
 // 编辑时间：同日只显示时分，跨天带上日期
@@ -758,7 +765,9 @@ function formatEditTime(t, createdAt) {
   const d = new Date(t);
   const c = new Date(createdAt);
   const hm = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  return d.toDateString() === c.toDateString() ? hm : `${d.getMonth()+1}月${d.getDate()}日 ${hm}`;
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const md = sameYear ? `${d.getMonth()+1}月${d.getDate()}日` : `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  return d.toDateString() === c.toDateString() ? hm : `${md} ${hm}`;
 }
 
 // 发布时间 + 每次编辑时间
@@ -885,6 +894,7 @@ function renderPostDetail(id) {
       </div>
     </div>
     ${getPostMedia(post).map(m => mediaHtml(m, 'detail')).join('')}
+    ${voiceBarHtml(post)}
     ${musicBarHtml(post)}
     <p class="detail-text">${escapeHtml(post.text)}</p>
     ${postMetaHtml(post)}
@@ -1172,7 +1182,8 @@ function renderUserPage(userId, user, posts) {
         ${posts.length ? posts.map(p => `
           <div class="post-card" onclick="viewPost('${p.id}')" style="margin-bottom:10px;">
             ${mediaListHtml(p, 'post')}
-            ${musicBarHtml(p)}
+            ${voiceBarHtml(p)}
+      ${musicBarHtml(p)}
             ${postTextHtml(p)}
             ${postMetaHtml(p)}
             <div class="post-time">${postTimeHtml(p)}</div>
@@ -1373,11 +1384,130 @@ let musicAudio = null;
 let musicPlayOp = 0;
 const musicState = { kind: null, id: null, sources: [], sourceIndex: 0, loading: false };
 
-function formatMusicDuration(seconds) {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+// ---- 语音录音 ----
+let pendingVoice = null; // { data, mime, duration, name, url, previewUrl }
+let voiceRecorder = null;
+let voiceStream = null;
+let voiceChunks = [];
+let voiceStartTime = 0;
+let voicePreviewAudio = null;
+let voicePlayOp = 0;
+const voiceState = { kind: null, id: null, sources: [], sourceIndex: 0, loading: false };
+let currentPlayingVoiceId = null; // 当前正在播放的动态语音 id
+let currentVoiceAudio = null;
+
+// 根据浏览器支持选择最优音频 MIME
+function pickAudioMime() {
+  const list = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4',
+    'audio/mp3'
+  ];
+  for (const t of list) {
+    try { if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t; } catch (e) {}
+  }
+  return '';
 }
 
+function startRecording() {
+  // 正在录音 → 停止
+  if (voiceRecorder && voiceRecorder.state === 'recording') {
+    stopRecording();
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('当前浏览器不支持录音，请在 iPhone Safari 中打开');
+    return;
+  }
+  if (!window.MediaRecorder) { showToast('当前浏览器不支持录音'); return; }
+  if (pendingVoice && pendingVoice.previewUrl) URL.revokeObjectURL(pendingVoice.previewUrl);
+  voiceChunks = [];
+  navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+    voiceStream = stream;
+    const mime = pickAudioMime();
+    const rec = mime ? new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 48000 }) : new MediaRecorder(stream);
+    voiceRecorder = rec;
+    voiceStartTime = Date.now();
+    rec.ondataavailable = e => { if (e.data && e.data.size > 0) voiceChunks.push(e.data); };
+    rec.onstop = onVoiceStopped;
+    rec.start(500); // 每 0.5 秒切一片，避免长时间录内存炸掉
+    const btn = document.getElementById('btn-voice-record');
+    if (btn) { btn.classList.add('recording'); btn.textContent = '⏹ 停止录音'; }
+    showToast('正在录音…');
+  }).catch(err => {
+    console.error('录音失败', err);
+    showToast('无法录音：' + (err && err.message ? err.message : '请检查麦克风权限'));
+  });
+}
+
+function stopRecording() {
+  if (voiceRecorder && voiceRecorder.state !== 'inactive') {
+    try { voiceRecorder.stop(); } catch (e) {}
+  }
+  if (voiceStream) { try { voiceStream.getTracks().forEach(t => t.stop()); } catch (e) {} voiceStream = null; }
+}
+
+async function onVoiceStopped() {
+  const btn = document.getElementById('btn-voice-record');
+  if (btn) { btn.classList.remove('recording'); btn.textContent = '🎙️ 录音'; }
+  if (!voiceChunks.length) { showToast('录音为空'); return; }
+  const blob = new Blob(voiceChunks, { type: pickAudioMime() || 'audio/webm' });
+  voiceChunks = [];
+  if (blob.size > 30 * 1024 * 1024) { showToast('录音太大（单个最大 30MB）'); return; }
+  const duration = (Date.now() - voiceStartTime) / 1000;
+  const previewUrl = URL.createObjectURL(blob);
+  // 转 base64 存 pendingVoice（发出版本走上传）
+  const data = await fileToBase64(blob);
+  const ext = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
+  pendingVoice = {
+    data, mime: blob.type, duration,
+    name: `voice_${Date.now()}.${ext}`,
+    previewUrl
+  };
+  renderPendingVoice();
+  if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+}
+
+function renderPendingVoice() {
+  const box = document.getElementById('voice-preview');
+  if (!box) return;
+  if (!pendingVoice) { box.innerHTML = ''; return; }
+  const dur = formatMusicDuration(pendingVoice.duration);
+  box.innerHTML = `<div class="music-bar static" onclick="event.stopPropagation()">
+    <button class="music-play" onclick="event.stopPropagation();previewPendingVoice()" aria-label="试听语音">${MUSIC_ICONS.play}</button>
+    <div class="music-info">
+      <div class="music-title">🎙️ 语音</div>
+      <div class="music-duration">${dur}</div>
+    </div>
+    <button class="music-remove" onclick="event.stopPropagation();removeVoice()" aria-label="移除语音">✕</button>
+  </div>`;
+}
+
+function previewPendingVoice() {
+  if (!pendingVoice || !pendingVoice.previewUrl) return;
+  if (voicePreviewAudio && voicePreviewAudio.src === pendingVoice.previewUrl) {
+    if (voicePreviewAudio.paused) { voicePreviewAudio.play(); } else { voicePreviewAudio.pause(); }
+    return;
+  }
+  if (voicePreviewAudio) { try { voicePreviewAudio.pause(); URL.revokeObjectURL(voicePreviewAudio.src); } catch (e) {} }
+  voicePreviewAudio = new Audio(pendingVoice.previewUrl);
+  voicePreviewAudio.onended = () => { voicePreviewAudio = null; renderPendingVoice(); };
+  voicePreviewAudio.play();
+  renderPendingVoice();
+}
+
+function removeVoice() {
+  stopRecording();
+  if (voicePreviewAudio) { try { voicePreviewAudio.pause(); } catch (e) {} voicePreviewAudio = null; }
+  if (pendingVoice && pendingVoice.previewUrl) URL.revokeObjectURL(pendingVoice.previewUrl);
+  pendingVoice = null;
+  renderPendingVoice();
+  if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+}
+
+// 动态里的语音条（播放全局单例，与音乐互斥）
 function readAudioDuration(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -1668,9 +1798,104 @@ async function playMusic(kind, id, sources, restart) {
   }
 }
 
+// ---- 动态里的语音条 ----
+function voiceBarHtml(post) {
+  if (!post.voice) return '';
+  const hasAudio = typeof post.voice.url === 'string' && post.voice.url;
+  if (!hasAudio) return '';
+  const dur = formatMusicDuration(post.voice.duration);
+  return `<div class="music-bar voice-bar" onclick="event.stopPropagation()">
+    <button class="music-play" data-voice-button="${post.id}" onclick="event.stopPropagation();togglePostVoice('${post.id}')" aria-label="播放语音">${MUSIC_ICONS.play}</button>
+    <div class="music-info">
+      <div class="music-title">🎙️ 语音</div>
+      <div class="music-duration">${dur}</div>
+    </div>
+    <span class="music-eq" aria-hidden="true"><i></i><i></i><i></i></span>
+  </div>`;
+}
+
+function syncVoiceButtons() {
+  document.querySelectorAll('[data-voice-button]').forEach(btn => {
+    const id = btn.dataset.voiceButton;
+    const isActive = currentPlayingVoiceId === id && currentVoiceAudio && !currentVoiceAudio.paused;
+    const loading = currentPlayingVoiceId === id && voiceState.loading;
+    btn.innerHTML = loading ? MUSIC_ICONS.loading : (isActive ? MUSIC_ICONS.pause : MUSIC_ICONS.play);
+  });
+}
+
+async function togglePostVoice(postId) {
+  const post = allPostsCache.find(p => p.id === postId);
+  if (!post || !post.voice || !post.voice.url) return;
+  // 先停掉音乐（互斥）
+  if (currentPlayingVoiceId === postId && currentVoiceAudio) {
+    if (currentVoiceAudio.paused) currentVoiceAudio.play(); else currentVoiceAudio.pause();
+    syncVoiceButtons();
+    return;
+  }
+  stopMusic();
+  stopCurrentVoice();
+  // 构建播放源：CDN → Pages → raw
+  const rel = mediaRelPath(post.voice.url);
+  const sources = rel ? [
+    MEDIA_CDN_PREFIX + rel,
+    MEDIA_PAGES_PREFIX + rel,
+    MEDIA_RAW_PREFIX + rel
+  ] : [post.voice.url];
+  currentPlayingVoiceId = postId;
+  voiceState.sources = sources;
+  voiceState.sourceIndex = 0;
+  voiceState.loading = true;
+  syncVoiceButtons();
+  const url = sources[0];
+  const op = ++voicePlayOp;
+  const audio = new Audio(url);
+  audio.preload = 'none';
+  currentVoiceAudio = audio;
+  audio.onloadstart = () => { voiceState.loading = true; syncVoiceButtons(); };
+  audio.onplaying = () => {
+    voiceState.loading = false;
+    if (op === voicePlayOp) syncVoiceButtons();
+  };
+  audio.onpause = () => { if (op === voicePlayOp) syncVoiceButtons(); };
+  audio.onended = () => {
+    if (op === voicePlayOp) {
+      stopCurrentVoice();
+    }
+  };
+  audio.onerror = async () => {
+    if (op !== voicePlayOp) return;
+    voiceState.sourceIndex++;
+    if (voiceState.sourceIndex < sources.length) {
+      audio.src = sources[voiceState.sourceIndex];
+      try { await audio.play(); } catch (e) {}
+      return;
+    }
+    voiceState.loading = false;
+    stopCurrentVoice();
+    showToast('语音加载失败');
+  };
+  try { await audio.play(); } catch (err) {
+    if (err && err.name === 'AbortError') return;
+    audio.onerror();
+  }
+}
+
+function stopCurrentVoice() {
+  if (currentVoiceAudio) {
+    try { currentVoiceAudio.pause(); currentVoiceAudio.removeAttribute('src'); currentVoiceAudio.load(); } catch (e) {}
+  }
+  currentVoiceAudio = null;
+  currentPlayingVoiceId = null;
+  voiceState.loading = false;
+  voiceState.sources = [];
+  voiceState.sourceIndex = 0;
+  syncVoiceButtons();
+}
+
 function togglePostMusic(postId) {
   const post = allPostsCache.find(p => p.id === postId);
   if (!post || !post.music || !post.music.url) return;
+  stopCurrentVoice();
   if (musicState.kind === 'post' && musicState.id === postId) {
     if (musicState.loading) { stopMusic(); return; }
     if (musicAudio && !musicAudio.paused && !musicAudio.ended) { pauseMusic(); return; }
@@ -2225,6 +2450,10 @@ async function startEditPost(id) {
   pendingMusic = post.music && post.music.url
     ? { name: 'music', title: post.music.title || '未命名音乐', duration: post.music.duration || 0, data: null, previewUrl: null, url: post.music.url }
     : null;
+  pendingVoice = post.voice && post.voice.url
+    ? { name: 'voice', duration: post.voice.duration || 0, data: null, previewUrl: null, url: post.voice.url }
+    : null;
+  renderPendingVoice();
   pickedWeather = metaList(post.weather);
   pickedMood = metaList(post.mood);
   document.getElementById('post-text').value = post.text || '';
@@ -2266,6 +2495,7 @@ function resetPublishForm() {
   pendingMedia = [];
   renderPendingMedia();
   clearPendingMusic();
+  removeVoice();
   document.getElementById('post-text').value = '';
   document.getElementById('visibility').value = 'private';
   onVisChange();
@@ -2280,7 +2510,8 @@ function resetPublishForm() {
 // 统一上传：已上传过的（编辑时保留的）媒体/音乐直接复用地址
 async function uploadPendingContent() {
   const music = pendingMusic;
-  const total = pendingMedia.length + (music ? 1 : 0);
+  const voice = pendingVoice;
+  const total = pendingMedia.length + (music ? 1 : 0) + (voice ? 1 : 0);
   let done = 0;
   showUploadProgress(total ? `上传中 0/${total}...` : '处理中...');
 
@@ -2315,7 +2546,15 @@ async function uploadPendingContent() {
     showUploadProgress(`上传中 ${done}/${total}...`);
     return { url: music.url, title: music.title, duration: music.duration || 0 };
   })();
-  const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask]);
+  const voiceTask = (async () => {
+    if (!voice) return null;
+    showUploadProgress(`上传中 ${done}/${total}：语音...`);
+    if (!voice.url) voice.url = await ghUploadMedia(voice.name, voice.data, { timeout: 300000 });
+    done++;
+    showUploadProgress(`上传中 ${done}/${total}...`);
+    return { url: voice.url, duration: voice.duration || 0 };
+  })();
+  const results = await Promise.all([uploadWorker(), uploadWorker(), musicTask, voiceTask]);
 
   const media = uploaded.map((u, i) => {
     const m = pendingMedia[i];
@@ -2329,7 +2568,7 @@ async function uploadPendingContent() {
     }
     return item;
   });
-  return { media, music: results[2] };
+  return { media, music: results[2], voice: results[3] };
 }
 
 async function publishPost() {
@@ -2337,13 +2576,13 @@ async function publishPost() {
   const visibility = document.getElementById('visibility').value;
   const editingId = editingPostId;
 
-  if (!text && !pendingMedia.length && !pendingMusic) {
-    alert('请输入内容或添加图片/视频/音乐');
+  if (!text && !pendingMedia.length && !pendingMusic && !pendingVoice) {
+    alert('请输入内容或添加图片/视频/音乐/语音');
     return;
   }
 
   try {
-    const { media, music } = await uploadPendingContent();
+    const { media, music, voice } = await uploadPendingContent();
     const now = new Date().toISOString();
 
     if (editingId) {
@@ -2356,6 +2595,7 @@ async function publishPost() {
         text,
         media,
         music,
+        voice,
         image: (media.find(m => m.type === 'image') || {}).url || null,
         video: (media.find(m => m.type === 'video') || {}).url || null,
         visibility,
@@ -2383,6 +2623,7 @@ async function publishPost() {
         text,
         media,
         music,
+        voice,
         image: (media.find(m => m.type === 'image') || {}).url || null,
         video: (media.find(m => m.type === 'video') || {}).url || null,
         visibility,
@@ -2404,6 +2645,7 @@ async function publishPost() {
     }
 
     stopMusic();
+    stopCurrentVoice();
     resetPublishForm();
     hideUploadProgress();
     showToast(editingId ? '✅ 修改已保存' : '✅ 发布成功！');
@@ -2478,7 +2720,7 @@ async function idbClear() {
 
 function formHasContent() {
   const ta = document.getElementById('post-text');
-  return !!((ta && ta.value.trim()) || pendingMedia.length || pendingMusic);
+  return !!((ta && ta.value.trim()) || pendingMedia.length || pendingMusic || pendingVoice);
 }
 
 function scheduleDraftSave() {
@@ -2501,6 +2743,9 @@ async function saveDraftNow() {
     music: pendingMusic
       ? { name: pendingMusic.name, title: pendingMusic.title, duration: pendingMusic.duration || 0, url: pendingMusic.url || null }
       : null,
+    voice: pendingVoice
+      ? { name: pendingVoice.name, duration: pendingVoice.duration || 0, url: pendingVoice.url || null }
+      : null,
     media: pendingMedia.map(m => ({
       key: m.key,
       kind: m.kind,
@@ -2521,6 +2766,10 @@ async function saveDraftNow() {
   if (pendingMusic && pendingMusic.data && !draftSavedBlobs.has('music_key')) {
     await idbSet('music', { data: pendingMusic.data, name: pendingMusic.name, mime: pendingMusic.mime || '' });
     draftSavedBlobs.add('music_key');
+  }
+  if (pendingVoice && pendingVoice.data && !draftSavedBlobs.has('voice_key')) {
+    await idbSet('voice', { data: pendingVoice.data, name: pendingVoice.name, mime: pendingVoice.mime || '' });
+    draftSavedBlobs.add('voice_key');
   }
 }
 
@@ -2584,8 +2833,22 @@ async function maybeRestoreDraft() {
         };
       }
     }
+    let voice = null;
+    if (d.voice) {
+      const rec = await idbGet('voice');
+      if (d.voice.url || (rec && rec.data)) {
+        voice = {
+          name: (rec && rec.name) || d.voice.name || 'voice.webm',
+          duration: d.voice.duration || 0,
+          data: rec ? rec.data : null,
+          previewUrl: null,
+          url: d.voice.url || null
+        };
+      }
+    }
     pendingMedia = media;
     pendingMusic = music;
+    pendingVoice = voice;
     pickedWeather = metaList(d.weather);
     pickedMood = metaList(d.mood);
     document.getElementById('post-text').value = d.text || '';
@@ -3713,7 +3976,11 @@ function switchTab(tab) {
   const activeTab = document.querySelector('.tab-btn.active');
   const previousTab = activeTab ? activeTab.dataset.tab : null;
   if (tab !== 'feed' && musicState.kind === 'post') pauseMusic();
-  if (previousTab === 'publish' && tab !== 'publish' && musicState.kind === 'preview') stopMusic();
+  if (previousTab === 'publish' && tab !== 'publish') {
+    stopMusic();
+    stopRecording();
+  }
+  if (tab !== 'feed') stopCurrentVoice();
   document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
   document.getElementById('tab-' + tab).style.display = 'block';
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#6a5acd">
   <title>梦里有zhi</title>
-  <link rel="stylesheet" href="style.css?v=55">
+  <link rel="stylesheet" href="style.css?v=56">
   <link rel="icon" href="../icon-192.png">
   <link rel="apple-touch-icon" href="../apple-touch-icon.png">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
@@ -122,8 +122,11 @@
           <button class="action-btn" onclick="addImage()">📷 图片</button>
           <button class="action-btn" onclick="addVideo(false)">🎬 视频</button>
           <button class="action-btn" onclick="addMusic()">🎵 音乐</button>
+          <button class="action-btn" id="btn-voice-record" onclick="startRecording()" style="position:relative;">🎙️ 录音</button>
         </div>
+        <div id="voice-preview" class="pending-music"></div>
         <div id="music-preview" class="pending-music"></div>
+        <p style="font-size:12px;color:#999;margin:4px 0 8px;">录音：点一次开始、再点一次停止，没有时长限制。录好后可以试听、移除。发布后动态里语音条会显示在音乐上方。</p>
         <p style="font-size:12px;color:#999;margin:4px 0 8px;">音乐：选择自己的 MP3 / M4A / AAC / WAV，单首不超过 15MB、10 分钟，会和图片一起上传，发布后动态里可播放。加密 / DRM 歌曲无法导入。</p>
         <p style="font-size:12px;color:#999;margin:4px 0 8px;">图片/视频都支持一次多选多个，长按图片可以拖动排序。视频会自动压缩后再上传，速度更快。</p>
         <input type="file" id="img-input" accept="image/*" multiple style="display:none;">
@@ -384,7 +387,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 107;
+const CURRENT_V = 108;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -418,6 +421,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=107"></script>
+<script src="app.js?v=108"></script>
 </body>
 </html>

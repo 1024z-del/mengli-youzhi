@@ -338,6 +338,19 @@ textarea:focus { border-color: #6c5ce7; }
 }
 .action-btn:active { background: rgba(255, 255, 255, 0.6); }
 .action-row .action-btn { min-width: 0; padding-left: 6px; padding-right: 6px; }
+.action-btn.recording {
+  background: rgba(255, 90, 90, 0.85);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+  animation: recPulse 1.2s ease-in-out infinite;
+}
+@keyframes recPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 90, 90, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 90, 90, 0); }
+}
+
+/* 语音条在音乐条之上，稍微强调一下（语音图标颜色稍亮） */
+.voice-bar .music-title { color: #5a3bb0; }
 
 /* 动态配乐与发布前试听 */
 .pending-music:empty { display: none; }
