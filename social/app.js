@@ -700,7 +700,7 @@ function renderFeed(posts) {
       <div class="post-header">
         ${getAvatarHtml(p.authorName, p.authorAvatar, p.authorId)}
         <div style="flex:1;">
-          <span class="post-author">${escapeHtml(p.authorName)}</span>
+          <span class="post-author" onclick="event.stopPropagation();${p.authorId ? `openUserPage('${p.authorId}')` : ''}" ${p.authorId ? 'style="cursor:pointer;"' : ''}>${escapeHtml(p.authorName)}</span>
           <span class="post-vis">${visLabel(p.visibility)}</span>
         </div>
       </div>
