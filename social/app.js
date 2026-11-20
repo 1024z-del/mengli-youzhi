@@ -4172,6 +4172,8 @@ function toggleChipBar(barId) {
   row.classList.toggle('open');
   const btn = row.querySelector('.chip-toggle-btn');
   if (btn) btn.textContent = row.classList.contains('open') ? '收起' : '更多';
+  const inner = row.querySelector('.chip-row-inner');
+  if (inner && inner.__updateFade) requestAnimationFrame(inner.__updateFade);
 }
 
 function setupChipBars() {
@@ -4184,6 +4186,21 @@ function setupChipBars() {
     row.classList.remove('open');
     // 始终显示 toggle 按钮（滑动是选项，展开多行也是选项）
     btn.style.display = '';
+
+    if (!inner.dataset.fadeBound) {
+      inner.dataset.fadeBound = '1';
+      // 根据滚动位置切换左右雾化遮罩，避免出现生硬的裁切竖线
+      const updateFade = () => {
+        const max = inner.scrollWidth - inner.clientWidth;
+        const left = inner.scrollLeft;
+        inner.style.setProperty('--chip-fade-l', left > 2 ? '30px' : '0px');
+        inner.style.setProperty('--chip-fade-r', (max > 2 && left < max - 2) ? '30px' : '0px');
+      };
+      inner.__updateFade = updateFade;
+      inner.addEventListener('scroll', updateFade, { passive: true });
+      window.addEventListener('resize', () => requestAnimationFrame(updateFade));
+    }
+    requestAnimationFrame(() => inner.__updateFade && inner.__updateFade());
   });
 }
 

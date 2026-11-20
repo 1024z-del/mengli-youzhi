@@ -315,9 +315,19 @@ textarea:focus { border-color: #6c5ce7; }
   align-items: center;
   gap: 6px;
   transition: max-height 0.25s ease;
-  /* 右边渐变遮罩，暗示可继续滑动 */
-  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
-          mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
+  /* 左右两侧雾化渐隐，柔化滚动裁切边缘 */
+  --chip-fade-l: 0px;
+  --chip-fade-r: 30px;
+  -webkit-mask-image: linear-gradient(to right,
+      transparent 0,
+      #000 var(--chip-fade-l),
+      #000 calc(100% - var(--chip-fade-r)),
+      transparent 100%);
+          mask-image: linear-gradient(to right,
+      transparent 0,
+      #000 var(--chip-fade-l),
+      #000 calc(100% - var(--chip-fade-r)),
+      transparent 100%);
   -webkit-mask-size: 100% 100%;
           mask-size: 100% 100%;
   -webkit-mask-repeat: no-repeat;
