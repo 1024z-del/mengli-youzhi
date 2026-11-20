@@ -177,50 +177,80 @@ function imgUpgrade(img) {
   };
   pre.src = full;
 }
-// ---- 主页背景图：本地缓存（IndexedDB），第二次进入秒开 ----
-// GitHub Pages 的媒体资源在弱网下首屏要十几秒，而且 cache-control 只有 10 分钟，
-// 所以把封面图存到本地，之后直接从 IndexedDB 取 blob，不再走网络。
-const coverBlobUrls = {};   // cover 原始地址 -> blob URL（本会话内复用）
-const coverLoading = {};    // cover 原始地址 -> Promise
-function coverCacheKey(u) {
+// ---- 媒体本地缓存（图片/音频/封面）：存 IndexedDB，回访秒开 ----
+// GitHub Pages 的媒体资源在弱网下冷启动要 10 秒以上，而且 cache-control 只有
+// 10 分钟，过期就要重新走慢链路。这里把用过的媒体存到本地，之后直接从
+// IndexedDB 取 blob（objectURL），不再走网络。
+const mediaBlobUrls = {};   // rel path -> blob URL（本会话内复用）
+const mediaLoading = {};    // rel path -> Promise
+function cachedMediaUrl(u) {
   const rel = mediaRelPath(u);
-  return rel ? 'cover:' + rel : null;
+  return rel ? (mediaBlobUrls[rel] || null) : null;
 }
-function loadCoverBlob(u) {
-  if (!u) return Promise.resolve(null);
-  if (coverBlobUrls[u]) return Promise.resolve(coverBlobUrls[u]);
-  if (coverLoading[u]) return coverLoading[u];
-  const key = coverCacheKey(u);
-  const job = (async () => {
-    if (key) {
-      try {
-        const cached = await idbGet(key);
-        if (cached && cached.size) {
-          const url = URL.createObjectURL(cached);
-          coverBlobUrls[u] = url;
-          return url;
-        }
-      } catch (e) {}
+async function getCachedMediaUrl(u) {
+  const rel = mediaRelPath(u);
+  if (!rel) return null;
+  if (mediaBlobUrls[rel]) return mediaBlobUrls[rel];
+  try {
+    const blob = await idbGet('media:' + rel);
+    if (blob && blob.size) {
+      const url = URL.createObjectURL(blob);
+      mediaBlobUrls[rel] = url;
+      return url;
     }
-    const rel = mediaRelPath(u);
-    const sources = rel ? [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [u];
-    for (const src of sources) {
+  } catch (e) {}
+  return null;
+}
+// 后台下载并缓存（不阻塞当前播放/渲染），下次直接用本地副本
+function prefetchMedia(u) {
+  const rel = mediaRelPath(u);
+  if (!rel) return Promise.resolve(null);
+  if (mediaBlobUrls[rel]) return Promise.resolve(mediaBlobUrls[rel]);
+  if (mediaLoading[rel]) return mediaLoading[rel];
+  const job = (async () => {
+    // 先看本地有没有（可能还没 hydrate 进内存）
+    try {
+      const old = await idbGet('media:' + rel);
+      if (old && old.size) {
+        const url = URL.createObjectURL(old);
+        mediaBlobUrls[rel] = url;
+        return url;
+      }
+    } catch (e) {}
+    for (const src of [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel]) {
       try {
         const resp = await fetch(src, { mode: 'cors' });
         if (!resp.ok) continue;
         const blob = await resp.blob();
-        if (!blob.size) continue;
-        if (key && blob.size <= 8 * 1024 * 1024) idbSet(key, blob);
+        if (!blob.size || blob.size > 25 * 1024 * 1024) continue;
+        idbSet('media:' + rel, blob);
         const url = URL.createObjectURL(blob);
-        coverBlobUrls[u] = url;
+        mediaBlobUrls[rel] = url;
         return url;
       } catch (e) {}
     }
     return null;
   })();
-  coverLoading[u] = job;
-  job.then(() => { delete coverLoading[u]; });
+  mediaLoading[rel] = job;
+  job.then(() => { delete mediaLoading[rel]; });
   return job;
+}
+// 启动时把本地已缓存的媒体读进内存，这样重建列表/切页都能直接命中
+async function hydrateMediaCache() {
+  try {
+    const keys = await idbKeys('media:');
+    for (const k of keys) {
+      const rel = k.slice(6);
+      if (mediaBlobUrls[rel]) continue;
+      const blob = await idbGet(k);
+      if (blob && blob.size) mediaBlobUrls[rel] = URL.createObjectURL(blob);
+    }
+  } catch (e) {}
+}
+// 图片 onload 后顺手缓存（用的是刚下完的 HTTP 缓存，几乎不额外耗时）
+function cacheLoadedMedia(img) {
+  const raw = img && img.dataset && img.dataset.mediaCache;
+  if (raw) prefetchMedia(raw);
 }
 // 把缓存好的封面贴到当前打开的主页上（只更新图片 src，不重排版）
 function applyCoverToPage(userId, cover, blobUrl) {
@@ -316,11 +346,13 @@ function mediaHtml(m, cls) {
   const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
     if (cls !== 'post') {
-      return `<img src="${mediaCdnUrl(raw)}"${fastImgFallbackAttr(raw)} class="detail-img" loading="lazy" decoding="async">`;
+      return `<img src="${cachedMediaUrl(raw) || mediaPagesUrl(raw)}"${cachedMediaUrl(raw) ? '' : fastImgFallbackAttr(raw)} data-media-cache="${escapeHtml(raw)}" class="detail-img" loading="lazy" decoding="async" onload="cacheLoadedMedia(this)">`;
     }
-    // 动态列表：先显示缩略图（秒开），原图加载好后再替换；不重复请求、不闪烁
-    const thumb = m.thumb ? mediaPagesUrl(m.thumb) : mediaPagesUrl(raw);
-    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || raw)} data-full="${mediaCdnUrl(raw)}" data-full-pages="${mediaPagesUrl(raw)}" onload="imgUpgrade(this)">`;
+    // 动态列表：优先用本地缓存；有缩略图就用缩略图（640px 足够看，不再自动下载原图）
+    const cacheRaw = m.thumb || raw;
+    const cached = cachedMediaUrl(cacheRaw);
+    const thumb = cached || mediaPagesUrl(cacheRaw);
+    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${cached ? '' : imgFallbackAttr(cacheRaw)} data-media-cache="${escapeHtml(cacheRaw)}" data-full-media="${escapeHtml(raw)}" onload="cacheLoadedMedia(this)">`;
   }
 
   // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
@@ -1193,7 +1225,10 @@ async function openUserPage(userId) {
 
   // 封面图：命中本地缓存则立刻换上，没有就后台拉取并缓存（下次秒开）
   const coverRef = user && user.cover;
-  if (coverRef) loadCoverBlob(coverRef).then(url => applyCoverToPage(userId, coverRef, url));
+  if (coverRef) {
+    getCachedMediaUrl(coverRef).then(url => applyCoverToPage(userId, coverRef, url));
+    prefetchMedia(coverRef);
+  }
 
   // 后台刷新用户信息和动态
   try {
@@ -1211,10 +1246,13 @@ async function openUserPage(userId) {
     if (currentUserPageId === userId && overlayStack.includes('user-page')) {
       renderUserPage(userId, user, visible);
       const fresh = user && user.cover;
-      if (fresh) loadCoverBlob(fresh).then(url => applyCoverToPage(userId, fresh, url));
+      if (fresh) {
+        getCachedMediaUrl(fresh).then(url => applyCoverToPage(userId, fresh, url));
+        prefetchMedia(fresh);
+      }
     }
     // 顺手把其他人的封面也预取进本地缓存，下次点进别人主页可以秒开
-    (allUsersCache || []).forEach(u => { if (u && u.cover) loadCoverBlob(u.cover); });
+    (allUsersCache || []).forEach(u => { if (u && u.cover) prefetchMedia(u.cover); });
   } catch (e) {
     console.error('主页刷新失败', e);
   }
@@ -1225,9 +1263,9 @@ function renderUserPage(userId, user, posts) {
   const bio = user ? (user.bio || '') : '';
   const cover = user ? user.cover : null;
   const isMe = userId === currentUser.id;
-  const coverSrc = cover ? (coverBlobUrls[cover] || mediaPagesUrl(cover)) : '';
+  const coverSrc = cover ? (cachedMediaUrl(cover) || mediaPagesUrl(cover)) : '';
   const coverHtml = cover
-    ? `<img class="user-cover-img${coverBlobUrls[cover] ? ' ready' : ''}" src="${coverSrc}" data-cover-key="${escapeHtml(cover)}" alt="" decoding="async" onload="this.classList.add('ready')"${imgFallbackAttr(cover)}>`
+    ? `<img class="user-cover-img${cachedMediaUrl(cover) ? ' ready' : ''}" src="${coverSrc}" data-cover-key="${escapeHtml(cover)}" data-media-cache="${escapeHtml(cover)}" alt="" decoding="async" onload="this.classList.add('ready');cacheLoadedMedia(this)"${imgFallbackAttr(cover)}>`
     : '';
   const avatarHtml = (user && user.avatar)
     ? `<img src="${mediaCdnUrl(user.avatar)}"${imgFallbackAttr(user.avatar)} decoding="async" data-zoom="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;cursor:zoom-in;">`
@@ -1798,7 +1836,8 @@ function resetMusicProgress() {
 
 function musicSources(url) {
   const rel = mediaRelPath(url);
-  return rel ? [MEDIA_CDN_PREFIX + rel, MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [url];
+  // jsDelivr 对这个仓库不生效（会 301 回 raw），所以直接用 Pages + raw，少一次跳转
+  return rel ? [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [url];
 }
 
 function musicBarHtml(post) {
@@ -1904,11 +1943,16 @@ async function playMusic(kind, id, sources, restart) {
   pausePageVideos();
   syncMusicButtons();
 
+  // 本地缓存命中就直接播放，不再走网络
+  const cachedUrl = await getCachedMediaUrl(sources[0]);
+  if (op !== musicPlayOp) return;
+  const list = cachedUrl ? [cachedUrl, ...sources] : sources;
+
   const start = (changed || restart) ? 0 : musicState.sourceIndex;
-  for (let i = start; i < musicState.sources.length; i++) {
+  for (let i = start; i < list.length; i++) {
     if (op !== musicPlayOp) return;
     musicState.sourceIndex = i;
-    const src = musicState.sources[i];
+    const src = list[i];
     try {
       if (changed || restart || audio.src !== src) {
         audio.src = src;
@@ -1920,6 +1964,7 @@ async function playMusic(kind, id, sources, restart) {
       if (op !== musicPlayOp) return;
       musicState.loading = false;
       syncMusicButtons();
+      prefetchMedia(sources[0]);
       return;
     } catch (err) {
       if (op !== musicPlayOp) return;
@@ -2015,13 +2060,14 @@ async function togglePostVoice(postId) {
   }
   stopMusic();
   stopCurrentVoice();
-  // 构建播放源：CDN → Pages → raw
+  // 构建播放源：Pages → raw（jsDelivr 对本仓库不生效），本地缓存优先
   const rel = mediaRelPath(post.voice.url);
   const sources = rel ? [
-    MEDIA_CDN_PREFIX + rel,
     MEDIA_PAGES_PREFIX + rel,
     MEDIA_RAW_PREFIX + rel
   ] : [post.voice.url];
+  const cachedVoice = await getCachedMediaUrl(post.voice.url);
+  if (cachedVoice) sources.unshift(cachedVoice);
   currentPlayingVoiceId = postId;
   voiceState.sources = sources;
   voiceState.sourceIndex = 0;
@@ -2036,6 +2082,7 @@ async function togglePostVoice(postId) {
   audio.onplaying = () => {
     voiceState.loading = false;
     if (op === voicePlayOp) syncVoiceButtons();
+    prefetchMedia(post.voice.url);
   };
   audio.onpause = () => { if (op === voicePlayOp) syncVoiceButtons(); };
   audio.onended = () => {
@@ -2882,6 +2929,21 @@ async function idbGet(key) {
       rq.onsuccess = () => res(rq.result || null);
       rq.onerror = () => res(null);
     } catch (e) { res(null); }
+  });
+}
+async function idbKeys(prefix) {
+  const db = await idbOpen();
+  if (!db) return [];
+  return new Promise(res => {
+    try {
+      const tx = db.transaction('files', 'readonly');
+      const rq = tx.objectStore('files').getAllKeys();
+      rq.onsuccess = () => {
+        const all = rq.result || [];
+        res(prefix ? all.filter(k => typeof k === 'string' && k.indexOf(prefix) === 0) : all);
+      };
+      rq.onerror = () => res([]);
+    } catch (e) { res([]); }
   });
 }
 async function idbDel(key) {
@@ -4317,6 +4379,8 @@ document.addEventListener('click', e => {
 window.addEventListener('DOMContentLoaded', () => {
   if (currentUser) showApp();
   else showAuth();
+  // 把本地已缓存的图片/音频读进内存，之后渲染列表可以秒出
+  hydrateMediaCache();
 });
 
 // 草稿：输入即记录；离开页面 / 切到后台 / 关闭 App 前再保存一次
