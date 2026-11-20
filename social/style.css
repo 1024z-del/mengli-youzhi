@@ -300,6 +300,13 @@ textarea:focus { border-color: #6c5ce7; }
   gap: 6px;
   margin: 10px 0;
 }
+.chip-row-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: #888;
+  white-space: nowrap;
+  padding-right: 2px;
+}
 .chip-row-inner {
   flex: 1;
   min-width: 0;
