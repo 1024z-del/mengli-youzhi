@@ -4162,6 +4162,8 @@ function selectMoodChip(kind, btn) {
   else list.push(v);
   syncMoodChips();
   if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+  // 把选中的标签滚到可见区（横向 scrollIntoView）
+  try { btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); } catch (e) {}
 }
 
 function toggleChipBar(barId) {
@@ -4179,12 +4181,9 @@ function setupChipBars() {
     const inner = row.querySelector('.chip-row-inner');
     const btn = row.querySelector('.chip-toggle-btn');
     if (!inner || !btn) return;
-    // 先确保是 collapsed 态再测
     row.classList.remove('open');
-    // inner 宽度 = row.clientWidth - toggle btn 宽度(约46) - gap(6)
-    const avail = inner.clientWidth;
-    const needMore = inner.scrollWidth > avail + 4;
-    btn.style.display = needMore ? '' : 'none';
+    // 始终显示 toggle 按钮（滑动是选项，展开多行也是选项）
+    btn.style.display = '';
   });
 }
 

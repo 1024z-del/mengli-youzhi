@@ -308,12 +308,29 @@ textarea:focus { border-color: #6c5ce7; }
   align-items: center;
   gap: 6px;
   transition: max-height 0.25s ease;
+  /* 右边渐变遮罩，暗示可继续滑动 */
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
+          mask-image: linear-gradient(to right, #000 0%, #000 calc(100% - 32px), transparent 100%);
+  -webkit-mask-size: 100% 100%;
+          mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+}
+.chip-row.open .chip-row-inner {
+  -webkit-mask-image: none;
+          mask-image: none;
 }
 .chip-row-inner.one-line {
   flex-wrap: nowrap;
-  overflow: hidden;
-  max-height: 32px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  /* 隐藏滚动条但保留滚动能力 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.chip-row-inner.one-line::-webkit-scrollbar { display: none; }
 .chip-row-inner.one-line > span,
 .chip-row-inner.one-line > .mood-chip-btn {
   flex-shrink: 0;
@@ -321,7 +338,8 @@ textarea:focus { border-color: #6c5ce7; }
 .chip-row.open .chip-row-inner.one-line {
   flex-wrap: wrap;
   max-height: none;
-  overflow: visible;
+  overflow-x: visible;
+  overflow-y: visible;
 }
 .sticker-bar span { font-size: 13px; color: #888; }
 .chip-row-inner > span { font-size: 13px; color: #888; flex-shrink: 0; }
