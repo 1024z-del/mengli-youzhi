@@ -293,17 +293,38 @@ textarea:focus { border-color: #6c5ce7; }
   gap: 6px;
   margin: 12px 0;
 }
-.sticker-bar.one-line {
+/* 新版结构：外层 chip-row 容器 + 内层 chip-row-inner 负责溢出裁剪 */
+.chip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+.chip-row-inner {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  transition: max-height 0.25s ease;
+}
+.chip-row-inner.one-line {
   flex-wrap: nowrap;
   overflow: hidden;
-  transition: max-height 0.25s ease;
   max-height: 32px;
 }
-.sticker-bar.one-line.expanded {
+.chip-row-inner.one-line > span,
+.chip-row-inner.one-line > .mood-chip-btn {
+  flex-shrink: 0;
+}
+.chip-row.open .chip-row-inner.one-line {
   flex-wrap: wrap;
   max-height: none;
   overflow: visible;
 }
+.sticker-bar span { font-size: 13px; color: #888; }
+.chip-row-inner > span { font-size: 13px; color: #888; flex-shrink: 0; }
 .chip-toggle-btn {
   flex-shrink: 0;
   padding: 4px 10px;

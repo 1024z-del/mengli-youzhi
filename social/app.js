@@ -4165,23 +4165,25 @@ function selectMoodChip(kind, btn) {
 }
 
 function toggleChipBar(barId) {
-  const bar = document.getElementById(barId);
-  if (!bar) return;
-  bar.classList.toggle('expanded');
-  const btn = bar.querySelector('.chip-toggle-btn');
-  if (btn) btn.textContent = bar.classList.contains('expanded') ? '收起' : '更多';
+  const row = document.getElementById(barId);
+  if (!row) return;
+  row.classList.toggle('open');
+  const btn = row.querySelector('.chip-toggle-btn');
+  if (btn) btn.textContent = row.classList.contains('open') ? '收起' : '更多';
 }
 
 function setupChipBars() {
   ['weather-bar', 'mood-bar'].forEach(id => {
-    const bar = document.getElementById(id);
-    if (!bar) return;
-    const btn = bar.querySelector('.chip-toggle-btn');
-    if (!btn) return;
-    // 测一下如果一行能放下所有 chips 就不用更多按钮
-    // 先临时 expanded 测全宽 vs 收起到 one-line 的宽
-    bar.classList.remove('expanded');
-    const needMore = bar.scrollWidth > bar.clientWidth + 4;
+    const row = document.getElementById(id);
+    if (!row) return;
+    const inner = row.querySelector('.chip-row-inner');
+    const btn = row.querySelector('.chip-toggle-btn');
+    if (!inner || !btn) return;
+    // 先确保是 collapsed 态再测
+    row.classList.remove('open');
+    // inner 宽度 = row.clientWidth - toggle btn 宽度(约46) - gap(6)
+    const avail = inner.clientWidth;
+    const needMore = inner.scrollWidth > avail + 4;
     btn.style.display = needMore ? '' : 'none';
   });
 }
