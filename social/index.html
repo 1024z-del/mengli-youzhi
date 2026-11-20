@@ -78,20 +78,37 @@
 
         <div id="media-preview" style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;margin:10px 0;"></div>
 
-        <div class="sticker-bar" id="weather-bar">
-          <span>🌤 此时天气：</span>
+        <div class="sticker-bar one-line" id="weather-bar">
+          <span>🌤 天气</span>
           <button class="mood-chip-btn" data-value="☀️ 晴" onclick="selectMoodChip('weather', this)">☀️ 晴</button>
           <button class="mood-chip-btn" data-value="🌤 多云" onclick="selectMoodChip('weather', this)">🌤 多云</button>
+          <button class="mood-chip-btn" data-value="⛅ 局部多云" onclick="selectMoodChip('weather', this)">⛅ 局部多云</button>
           <button class="mood-chip-btn" data-value="☁️ 阴" onclick="selectMoodChip('weather', this)">☁️ 阴</button>
-          <button class="mood-chip-btn" data-value="🌧 雨" onclick="selectMoodChip('weather', this)">🌧 雨</button>
-          <button class="mood-chip-btn" data-value="⛈ 雷雨" onclick="selectMoodChip('weather', this)">⛈ 雷雨</button>
+          <button class="mood-chip-btn" data-value="🌧 小雨" onclick="selectMoodChip('weather', this)">🌧 小雨</button>
+          <button class="mood-chip-btn" data-value="🌧 中雨" onclick="selectMoodChip('weather', this)">🌧 中雨</button>
+          <button class="mood-chip-btn" data-value="🌧 大雨" onclick="selectMoodChip('weather', this)">🌧 大雨</button>
+          <button class="mood-chip-btn" data-value="⛈ 雷阵雨" onclick="selectMoodChip('weather', this)">⛈ 雷阵雨</button>
           <button class="mood-chip-btn" data-value="🌫 雾" onclick="selectMoodChip('weather', this)">🌫 雾</button>
-          <button class="mood-chip-btn" data-value="❄️ 雪" onclick="selectMoodChip('weather', this)">❄️ 雪</button>
-          <button class="mood-chip-btn" data-value="🌪 风大" onclick="selectMoodChip('weather', this)">🌪 风大</button>
+          <button class="mood-chip-btn" data-value="🌫 霾" onclick="selectMoodChip('weather', this)">🌫 霾</button>
+          <button class="mood-chip-btn" data-value="❄️ 小雪" onclick="selectMoodChip('weather', this)">❄️ 小雪</button>
+          <button class="mood-chip-btn" data-value="❄️ 大雪" onclick="selectMoodChip('weather', this)">❄️ 大雪</button>
+          <button class="mood-chip-btn" data-value="🌪 大风" onclick="selectMoodChip('weather', this)">🌪 大风</button>
+          <button class="mood-chip-btn" data-value="🌈 雨后彩虹" onclick="selectMoodChip('weather', this)">🌈 雨后彩虹</button>
+          <button class="mood-chip-btn" data-value="🌙 夜晚" onclick="selectMoodChip('weather', this)">🌙 夜晚</button>
+          <button class="mood-chip-btn" data-value="🔥 闷热" onclick="selectMoodChip('weather', this)">🔥 闷热</button>
+          <button class="mood-chip-btn" data-value="🥶 寒冷" onclick="selectMoodChip('weather', this)">🥶 寒冷</button>
+          <button class="mood-chip-btn" data-value="🌸 春暖花开" onclick="selectMoodChip('weather', this)">🌸 春暖花开</button>
+          <button class="mood-chip-btn" data-value="🍂 秋高气爽" onclick="selectMoodChip('weather', this)">🍂 秋高气爽</button>
+          <button class="mood-chip-btn" data-value="🌨 暴雪" onclick="selectMoodChip('weather', this)">🌨 暴雪</button>
+          <button class="mood-chip-btn" data-value="🌊 台风" onclick="selectMoodChip('weather', this)">🌊 台风</button>
+          <button class="mood-chip-btn" data-value="☀️ 暴晒" onclick="selectMoodChip('weather', this)">☀️ 暴晒</button>
+          <button class="mood-chip-btn" data-value="☃️ 堆雪人" onclick="selectMoodChip('weather', this)">☃️ 堆雪人</button>
+          <button class="mood-chip-btn" data-value="🌧 适合听雨" onclick="selectMoodChip('weather', this)">🌧 适合听雨</button>
+          <button class="chip-toggle-btn" onclick="toggleChipBar('weather-bar')" style="display:none;">更多</button>
         </div>
 
-        <div class="sticker-bar" id="mood-bar">
-          <span>💗 此时心情：</span>
+        <div class="sticker-bar one-line" id="mood-bar">
+          <span>💗 心情</span>
           <button class="mood-chip-btn" data-value="😊 开心" onclick="selectMoodChip('mood', this)">😊 开心</button>
           <button class="mood-chip-btn" data-value="🥰 幸福" onclick="selectMoodChip('mood', this)">🥰 幸福</button>
           <button class="mood-chip-btn" data-value="😌 平静" onclick="selectMoodChip('mood', this)">😌 平静</button>
@@ -100,6 +117,27 @@
           <button class="mood-chip-btn" data-value="😢 难过" onclick="selectMoodChip('mood', this)">😢 难过</button>
           <button class="mood-chip-btn" data-value="😤 生气" onclick="selectMoodChip('mood', this)">😤 生气</button>
           <button class="mood-chip-btn" data-value="🤩 兴奋" onclick="selectMoodChip('mood', this)">🤩 兴奋</button>
+          <button class="mood-chip-btn" data-value="😇 满足" onclick="selectMoodChip('mood', this)">😇 满足</button>
+          <button class="mood-chip-btn" data-value="😋 吃得好满足" onclick="selectMoodChip('mood', this)">😋 吃得好满足</button>
+          <button class="mood-chip-btn" data-value="😎 很酷" onclick="selectMoodChip('mood', this)">😎 很酷</button>
+          <button class="mood-chip-btn" data-value="🤗 被爱包围" onclick="selectMoodChip('mood', this)">🤗 被爱包围</button>
+          <button class="mood-chip-btn" data-value="😳 害羞" onclick="selectMoodChip('mood', this)">😳 害羞</button>
+          <button class="mood-chip-btn" data-value="🤔 纠结" onclick="selectMoodChip('mood', this)">🤔 纠结</button>
+          <button class="mood-chip-btn" data-value="😰 焦虑" onclick="selectMoodChip('mood', this)">😰 焦虑</button>
+          <button class="mood-chip-btn" data-value="😱 震惊" onclick="selectMoodChip('mood', this)">😱 震惊</button>
+          <button class="mood-chip-btn" data-value="😭 大哭" onclick="selectMoodChip('mood', this)">😭 大哭</button>
+          <button class="mood-chip-btn" data-value="🫠 融化了" onclick="selectMoodChip('mood', this)">🫠 融化了</button>
+          <button class="mood-chip-btn" data-value="💪 元气满满" onclick="selectMoodChip('mood', this)">💪 元气满满</button>
+          <button class="mood-chip-btn" data-value="☕ 小资情调" onclick="selectMoodChip('mood', this)">☕ 小资情调</button>
+          <button class="mood-chip-btn" data-value="🎵 被音乐治愈" onclick="selectMoodChip('mood', this)">🎵 被音乐治愈</button>
+          <button class="mood-chip-btn" data-value="📖 安静看书" onclick="selectMoodChip('mood', this)">📖 安静看书</button>
+          <button class="mood-chip-btn" data-value="🛋 躺平" onclick="selectMoodChip('mood', this)">🛋 躺平</button>
+          <button class="mood-chip-btn" data-value="🔥 干劲十足" onclick="selectMoodChip('mood', this)">🔥 干劲十足</button>
+          <button class="mood-chip-btn" data-value="💔 心碎" onclick="selectMoodChip('mood', this)">💔 心碎</button>
+          <button class="mood-chip-btn" data-value="🌙 思绪万千" onclick="selectMoodChip('mood', this)">🌙 思绪万千</button>
+          <button class="mood-chip-btn" data-value="🥳 庆祝" onclick="selectMoodChip('mood', this)">🥳 庆祝</button>
+          <button class="mood-chip-btn" data-value="😶‍🌫️ 放空" onclick="selectMoodChip('mood', this)">😶‍🌫️ 放空</button>
+          <button class="chip-toggle-btn" onclick="toggleChipBar('mood-bar')" style="display:none;">更多</button>
         </div>
 
         <div class="vis-box">
@@ -387,7 +425,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 113;
+const CURRENT_V = 114;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -421,6 +459,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=113"></script>
+<script src="app.js?v=114"></script>
 </body>
 </html>

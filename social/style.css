@@ -293,6 +293,29 @@ textarea:focus { border-color: #6c5ce7; }
   gap: 6px;
   margin: 12px 0;
 }
+.sticker-bar.one-line {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+  max-height: 32px;
+}
+.sticker-bar.one-line.expanded {
+  flex-wrap: wrap;
+  max-height: none;
+  overflow: visible;
+}
+.chip-toggle-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px dashed rgba(108, 92, 231, 0.55);
+  background: rgba(255, 255, 255, 0.5);
+  color: #6c5ce7;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
 .sticker-bar span { font-size: 13px; color: #888; }
 .sticker {
   background: rgba(255, 255, 255, 0.32);

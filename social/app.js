@@ -4107,7 +4107,7 @@ function switchTab(tab) {
   if (manageBtn) manageBtn.style.display = (tab === 'feed' && !manageMode) ? 'inline-block' : 'none';
   const clearBtn = document.getElementById('btn-clear-publish');
   if (clearBtn) clearBtn.style.display = tab === 'publish' ? 'flex' : 'none';
-  if (tab === 'publish') { loadFriendOptions(); maybeRestoreDraft(); }
+  if (tab === 'publish') { loadFriendOptions(); maybeRestoreDraft(); setTimeout(setupChipBars, 60); }
   if (tab === 'friends') { loadFriendsPage(); loadNotifications(); }
   if (tab === 'settings') loadSettings();
   if (tab === 'feed') loadPosts();
@@ -4162,6 +4162,28 @@ function selectMoodChip(kind, btn) {
   else list.push(v);
   syncMoodChips();
   if (typeof scheduleDraftSave === 'function') scheduleDraftSave();
+}
+
+function toggleChipBar(barId) {
+  const bar = document.getElementById(barId);
+  if (!bar) return;
+  bar.classList.toggle('expanded');
+  const btn = bar.querySelector('.chip-toggle-btn');
+  if (btn) btn.textContent = bar.classList.contains('expanded') ? '收起' : '更多';
+}
+
+function setupChipBars() {
+  ['weather-bar', 'mood-bar'].forEach(id => {
+    const bar = document.getElementById(id);
+    if (!bar) return;
+    const btn = bar.querySelector('.chip-toggle-btn');
+    if (!btn) return;
+    // 测一下如果一行能放下所有 chips 就不用更多按钮
+    // 先临时 expanded 测全宽 vs 收起到 one-line 的宽
+    bar.classList.remove('expanded');
+    const needMore = bar.scrollWidth > bar.clientWidth + 4;
+    btn.style.display = needMore ? '' : 'none';
+  });
 }
 
 function syncMoodChips() {
