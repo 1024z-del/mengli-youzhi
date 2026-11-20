@@ -207,6 +207,10 @@ function prefetchMedia(u) {
   if (!rel) return Promise.resolve(null);
   if (mediaBlobUrls[rel]) return Promise.resolve(mediaBlobUrls[rel]);
   if (mediaLoading[rel]) return mediaLoading[rel];
+  // 正在播放音频时不抢带宽，否则弱网下会把播放缓冲抽干
+  const audioBusy = (musicAudio && !musicAudio.paused && !musicAudio.ended)
+    || (currentVoiceAudio && !currentVoiceAudio.paused && !currentVoiceAudio.ended);
+  if (audioBusy) return Promise.resolve(null);
   const job = (async () => {
     // 先看本地有没有（可能还没 hydrate 进内存）
     try {
@@ -1815,6 +1819,9 @@ function ensureMusicAudio() {
     musicState.loading = false;
     resetMusicProgress();
     syncMusicButtons();
+    // 播完后再缓存整首，避免播放过程中和流媒体抢带宽（弱网下会导致播一半没声）
+    const first = musicState.sources && musicState.sources[0];
+    if (first) prefetchMedia(first);
   });
   return musicAudio;
 }
@@ -1906,6 +1913,9 @@ function pauseMusic() {
   if (musicAudio) musicAudio.pause();
   musicState.loading = false;
   syncMusicButtons();
+  // 用户主动暂停后带宽空出来了，这时再缓存整首（播放中缓存会抢带宽导致播一半没声）
+  const first = musicState.sources && musicState.sources[0];
+  if (first) prefetchMedia(first);
 }
 
 function stopMusic() {
@@ -1964,7 +1974,6 @@ async function playMusic(kind, id, sources, restart) {
       if (op !== musicPlayOp) return;
       musicState.loading = false;
       syncMusicButtons();
-      prefetchMedia(sources[0]);
       return;
     } catch (err) {
       if (op !== musicPlayOp) return;
@@ -2082,11 +2091,11 @@ async function togglePostVoice(postId) {
   audio.onplaying = () => {
     voiceState.loading = false;
     if (op === voicePlayOp) syncVoiceButtons();
-    prefetchMedia(post.voice.url);
   };
   audio.onpause = () => { if (op === voicePlayOp) syncVoiceButtons(); };
   audio.onended = () => {
     if (op === voicePlayOp) {
+      prefetchMedia(post.voice.url);
       stopCurrentVoice();
     }
   };
