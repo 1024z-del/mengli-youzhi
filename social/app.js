@@ -177,6 +177,62 @@ function imgUpgrade(img) {
   };
   pre.src = full;
 }
+// ---- 主页背景图：本地缓存（IndexedDB），第二次进入秒开 ----
+// GitHub Pages 的媒体资源在弱网下首屏要十几秒，而且 cache-control 只有 10 分钟，
+// 所以把封面图存到本地，之后直接从 IndexedDB 取 blob，不再走网络。
+const coverBlobUrls = {};   // cover 原始地址 -> blob URL（本会话内复用）
+const coverLoading = {};    // cover 原始地址 -> Promise
+function coverCacheKey(u) {
+  const rel = mediaRelPath(u);
+  return rel ? 'cover:' + rel : null;
+}
+function loadCoverBlob(u) {
+  if (!u) return Promise.resolve(null);
+  if (coverBlobUrls[u]) return Promise.resolve(coverBlobUrls[u]);
+  if (coverLoading[u]) return coverLoading[u];
+  const key = coverCacheKey(u);
+  const job = (async () => {
+    if (key) {
+      try {
+        const cached = await idbGet(key);
+        if (cached && cached.size) {
+          const url = URL.createObjectURL(cached);
+          coverBlobUrls[u] = url;
+          return url;
+        }
+      } catch (e) {}
+    }
+    const rel = mediaRelPath(u);
+    const sources = rel ? [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [u];
+    for (const src of sources) {
+      try {
+        const resp = await fetch(src, { mode: 'cors' });
+        if (!resp.ok) continue;
+        const blob = await resp.blob();
+        if (!blob.size) continue;
+        if (key && blob.size <= 8 * 1024 * 1024) idbSet(key, blob);
+        const url = URL.createObjectURL(blob);
+        coverBlobUrls[u] = url;
+        return url;
+      } catch (e) {}
+    }
+    return null;
+  })();
+  coverLoading[u] = job;
+  job.then(() => { delete coverLoading[u]; });
+  return job;
+}
+// 把缓存好的封面贴到当前打开的主页上（只更新图片 src，不重排版）
+function applyCoverToPage(userId, cover, blobUrl) {
+  if (!cover || !blobUrl) return;
+  if (currentUserPageId !== userId) return;
+  const img = document.querySelector('#user-page-content .user-cover-img');
+  if (img && img.dataset.coverKey === cover && img.src !== blobUrl) {
+    img.src = blobUrl;
+    img.classList.remove('ready');
+    if (img.complete) img.classList.add('ready');
+  }
+}
 function getPostMedia(p) {
   if (Array.isArray(p.media) && p.media.length) return p.media;
   const list = [];
@@ -1135,6 +1191,10 @@ async function openUserPage(userId) {
   document.getElementById('user-page').style.display = 'block';
   openOverlay('user-page');
 
+  // 封面图：命中本地缓存则立刻换上，没有就后台拉取并缓存（下次秒开）
+  const coverRef = user && user.cover;
+  if (coverRef) loadCoverBlob(coverRef).then(url => applyCoverToPage(userId, coverRef, url));
+
   // 后台刷新用户信息和动态
   try {
     const [{ content: users }, { content: posts }] = await Promise.all([
@@ -1150,7 +1210,11 @@ async function openUserPage(userId) {
     // 只更新当前仍打开的这个主页
     if (currentUserPageId === userId && overlayStack.includes('user-page')) {
       renderUserPage(userId, user, visible);
+      const fresh = user && user.cover;
+      if (fresh) loadCoverBlob(fresh).then(url => applyCoverToPage(userId, fresh, url));
     }
+    // 顺手把其他人的封面也预取进本地缓存，下次点进别人主页可以秒开
+    (allUsersCache || []).forEach(u => { if (u && u.cover) loadCoverBlob(u.cover); });
   } catch (e) {
     console.error('主页刷新失败', e);
   }
@@ -1161,17 +1225,19 @@ function renderUserPage(userId, user, posts) {
   const bio = user ? (user.bio || '') : '';
   const cover = user ? user.cover : null;
   const isMe = userId === currentUser.id;
-  const coverStyle = cover
-    ? `background-image:url('${mediaPagesUrl(cover)}');background-size:cover;background-position:center;`
-    : 'background:linear-gradient(135deg,#a78bfa,#7c3aed);';
+  const coverSrc = cover ? (coverBlobUrls[cover] || mediaPagesUrl(cover)) : '';
+  const coverHtml = cover
+    ? `<img class="user-cover-img${coverBlobUrls[cover] ? ' ready' : ''}" src="${coverSrc}" data-cover-key="${escapeHtml(cover)}" alt="" decoding="async" onload="this.classList.add('ready')"${imgFallbackAttr(cover)}>`
+    : '';
   const avatarHtml = (user && user.avatar)
     ? `<img src="${mediaCdnUrl(user.avatar)}"${imgFallbackAttr(user.avatar)} decoding="async" data-zoom="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;cursor:zoom-in;">`
     : `<div style="width:72px;height:72px;border-radius:50%;border:3px solid #fff;background:#a78bfa;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;">${escapeHtml((name || '?').charAt(0).toUpperCase())}</div>`;
 
   document.getElementById('user-page-content').innerHTML = `
-    <div style="${coverStyle}height:220px;position:relative;margin-top:0;"${cover ? ` data-zoom="${cover}"` : ''}>
-      <button onclick="closeUserPage()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;">‹</button>
-      ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;">编辑</button>` : ''}
+    <div class="user-cover" style="height:220px;position:relative;margin-top:0;"${cover ? ` data-zoom="${cover}"` : ''}>
+      ${coverHtml}
+      <button onclick="closeUserPage()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));left:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:50%;width:32px;height:32px;cursor:pointer;font-size:17px;line-height:1;z-index:2;">‹</button>
+      ${isMe ? `<button onclick="closeUserPage();openProfileModal()" style="position:absolute;top:calc(10px + env(safe-area-inset-top));right:10px;background:rgba(0,0,0,.35);color:#fff;border:none;border-radius:14px;padding:5px 12px;cursor:pointer;font-size:12px;z-index:2;">编辑</button>` : ''}
     </div>
     <div style="padding:0 16px 16px;position:relative;">
       <div style="margin-top:-36px;">${avatarHtml}</div>
