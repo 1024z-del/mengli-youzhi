@@ -256,15 +256,22 @@ function cacheLoadedMedia(img) {
   const raw = img && img.dataset && img.dataset.mediaCache;
   if (raw) prefetchMedia(raw);
 }
+// 已经成功显示过的封面地址：主页二次渲染时直接复用，避免又变成"慢慢加载"的空白
+const loadedCoverSrc = {};
+function onCoverLoad(img) {
+  img.classList.add('ready');
+  const key = img.dataset.coverKey;
+  if (key) loadedCoverSrc[key] = img.currentSrc || img.src;
+  cacheLoadedMedia(img);
+}
 // 把缓存好的封面贴到当前打开的主页上（只更新图片 src，不重排版）
 function applyCoverToPage(userId, cover, blobUrl) {
   if (!cover || !blobUrl) return;
   if (currentUserPageId !== userId) return;
   const img = document.querySelector('#user-page-content .user-cover-img');
-  if (img && img.dataset.coverKey === cover && img.src !== blobUrl) {
-    img.src = blobUrl;
-    img.classList.remove('ready');
-    if (img.complete) img.classList.add('ready');
+  if (img && img.dataset.coverKey === cover) {
+    if (img.classList.contains('ready')) return; // 已经在显示了，别再换源
+    if (img.src !== blobUrl) img.src = blobUrl;
   }
 }
 function getPostMedia(p) {
@@ -1267,9 +1274,12 @@ function renderUserPage(userId, user, posts) {
   const bio = user ? (user.bio || '') : '';
   const cover = user ? user.cover : null;
   const isMe = userId === currentUser.id;
-  const coverSrc = cover ? (cachedMediaUrl(cover) || mediaPagesUrl(cover)) : '';
+  const coverKnownSrc = cover ? loadedCoverSrc[cover] : null;
+  const coverCached = cover ? cachedMediaUrl(cover) : null;
+  const coverSrc = cover ? (coverKnownSrc || coverCached || mediaPagesUrl(cover)) : '';
+  const coverReady = !!(coverKnownSrc || coverCached);
   const coverHtml = cover
-    ? `<img class="user-cover-img${cachedMediaUrl(cover) ? ' ready' : ''}" src="${coverSrc}" data-cover-key="${escapeHtml(cover)}" data-media-cache="${escapeHtml(cover)}" alt="" decoding="async" onload="this.classList.add('ready');cacheLoadedMedia(this)"${imgFallbackAttr(cover)}>`
+    ? `<img class="user-cover-img${coverReady ? ' ready' : ''}" src="${coverSrc}" data-cover-key="${escapeHtml(cover)}" data-media-cache="${escapeHtml(cover)}" alt="" decoding="async" onload="onCoverLoad(this)"${imgFallbackAttr(cover)}>`
     : '';
   const avatarHtml = (user && user.avatar)
     ? `<img src="${mediaCdnUrl(user.avatar)}"${imgFallbackAttr(user.avatar)} decoding="async" data-zoom="${user.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid #fff;background:#eee;cursor:zoom-in;">`
@@ -4018,7 +4028,7 @@ function drawCoverCropper() {
 
 function confirmCoverCrop() {
   if (!coverCropImg) return;
-  const outW = 1400;
+  const outW = 1080;
   const outH = Math.round(outW * COVER_FRAME_H / COVER_FRAME_W);
   const out = document.createElement('canvas');
   out.width = outW;
@@ -4032,7 +4042,7 @@ function confirmCoverCrop() {
     coverCropImg.width * s * r,
     coverCropImg.height * s * r
   );
-  const dataUrl = out.toDataURL('image/jpeg', 0.8);
+  const dataUrl = out.toDataURL('image/jpeg', 0.72);
   pendingCover = dataUrl.split(',')[1];
   const coverEdit = document.getElementById('profile-cover-edit');
   if (coverEdit) {
@@ -4163,6 +4173,8 @@ async function loadUsersCache() {
   try {
     const { content: users } = await ghGetFile('data/users.json');
     allUsersCache = users || [];
+    // 后台把大家的封面预取到本地，进主页时就不用等这张慢图了
+    allUsersCache.forEach(u => { if (u && u.cover) prefetchMedia(u.cover); });
   } catch (e) {
     console.error('加载用户列表失败', e);
   }
