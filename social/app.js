@@ -110,6 +110,9 @@ async function ghUploadMedia(name, base64, options) {
 // ---- 媒体地址：优先 jsDelivr CDN（国内更快），失败再回退 Pages / raw ----
 const MEDIA_RAW_PREFIX = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/`;
 const MEDIA_PAGES_PREFIX = `https://${GH.owner}.github.io/${GH.repo}/social/`;
+// 实测 jsdelivr.net 对本仓库只返回 301 跳回 raw（raw 很多网络下不通），
+// 但 jsDelivr 的 gcore 节点能直接 200 返回文件，作为 Pages 之外的第二条线路。
+const MEDIA_CDN_PREFIX = `https://gcore.jsdelivr.net/gh/${GH.owner}/${GH.repo}@${GH.branch}/social/`;
 function mediaRelPath(u) {
   return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? u.slice(MEDIA_RAW_PREFIX.length) : null;
 }
@@ -122,35 +125,36 @@ function mediaPagesUrl(u) {
   const rel = mediaRelPath(u);
   return rel ? MEDIA_PAGES_PREFIX + rel : u;
 }
-// 实测：jsDelivr 对这个仓库只会 301 跳回 raw.githubusercontent.com，
-// 而 raw 在部分网络下完全不通（15s 零字节），所以一律用 Pages，raw 只作最后兜底。
 function mediaCdnUrl(u) {
-  return mediaPagesUrl(u);
+  const rel = mediaRelPath(u);
+  return rel ? MEDIA_CDN_PREFIX + rel : u;
 }
 function mediaFallbackAttr(rawUrl) {
   const rel = mediaRelPath(rawUrl);
   if (!rel) return '';
-  const pages = MEDIA_PAGES_PREFIX + rel;
-  // 依次回退：Pages → raw（raw 只在 Pages 真的 404 时才救急）
-  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${rawUrl}';}"`;
+  const cdn = MEDIA_CDN_PREFIX + rel;
+  // 依次回退：CDN → raw
+  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${cdn}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${rawUrl}';}"`;
 }
 
-// 图片兜底：Pages 刚部署时新文件会短暂 404，先用 raw 拿到，再换回 Pages / CDN
+// 图片兜底：Pages 慢/不通时换 CDN，最后才用 raw
 function fastImgFallbackAttr(rawUrl) {
   const rel = mediaRelPath(rawUrl);
   if (!rel) return '';
   const pages = MEDIA_PAGES_PREFIX + rel;
+  const cdn = MEDIA_CDN_PREFIX + rel;
   const raw = MEDIA_RAW_PREFIX + rel;
-  // Pages → raw（raw 只在确实 404 时兜底，避免它卡住等待）
-  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${pages}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${raw}';}"`;
+  // CDN → raw（当前 src 通常已经是 Pages）
+  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${cdn}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${raw}';}"`;
 }
 function imgFallbackAttr(u) {
   const rel = mediaRelPath(u);
   if (!rel) return '';
   const pages = MEDIA_PAGES_PREFIX + rel;
+  const cdn = MEDIA_CDN_PREFIX + rel;
   const raw = MEDIA_RAW_PREFIX + rel;
-  // 第一顺位就是 Pages；raw 只作最后兜底（它可能整段卡死，不能放前面）
-  return ` onerror="imgRetry(this)" data-fb='${JSON.stringify([pages, raw])}'`;
+  // Pages → CDN → raw
+  return ` onerror="imgRetry(this)" data-fb='${JSON.stringify([pages, cdn, raw])}'`;
 }
 
 function imgRetry(img) {
@@ -161,6 +165,38 @@ function imgRetry(img) {
   img.dataset.fi = i + 1;
   const delay = i === 3 ? 3000 : 0;
   setTimeout(() => { img.src = list[i]; }, delay);
+}
+// 图片兜底：Pages 若一直没响应（不是报错，而是卡住），也不会永久空白——超时后自动换线路
+function nextImgFallback(img) {
+  let list = [];
+  try { list = JSON.parse(img.dataset.fb || '[]'); } catch (e) { return; }
+  const cur = img.getAttribute('src') || '';
+  let i = +(img.dataset.fi || 0);
+  while (i < list.length && (list[i] === cur || list[i] === img.currentSrc)) i++;
+  if (i >= list.length) return;
+  img.dataset.fi = i + 1;
+  img.src = list[i];
+}
+function armImgFallbacks(root) {
+  (root || document).querySelectorAll('img[data-fb]:not([data-armed])').forEach(img => {
+    img.dataset.armed = '1';
+    setTimeout(() => {
+      if (!img.isConnected || (img.complete && img.naturalWidth > 0)) return;
+      nextImgFallback(img);
+      setTimeout(() => {
+        if (!img.isConnected || (img.complete && img.naturalWidth > 0)) return;
+        nextImgFallback(img);
+      }, 10000);
+    }, 12000);
+  });
+}
+let armImgRaf = 0;
+function initImgFallbackWatch() {
+  armImgFallbacks();
+  new MutationObserver(() => {
+    if (armImgRaf) return;
+    armImgRaf = requestAnimationFrame(() => { armImgRaf = 0; armImgFallbacks(); });
+  }).observe(document.body, { childList: true, subtree: true });
 }
 // 缩略图已在显示，原图预加载完成后再无感替换（避免闪烁）
 function imgUpgrade(img) {
@@ -188,24 +224,12 @@ function cachedMediaUrl(u) {
   return rel ? (mediaBlobUrls[rel] || null) : null;
 }
 // IndexedDB 偶尔会被阻塞（另一个标签页占用、Safari 回收等），
-// 不能让播放/渲染无限等它，统一加个超时。
+// 不能让缓存写入/读取无限等它，统一加个超时。
 function withTimeout(promise, ms, fallback) {
   return Promise.race([
     promise.catch(() => fallback),
     new Promise(res => setTimeout(() => res(fallback), ms))
   ]);
-}
-async function getCachedMediaUrl(u) {
-  const rel = mediaRelPath(u);
-  if (!rel) return null;
-  if (mediaBlobUrls[rel]) return mediaBlobUrls[rel];
-  const blob = await withTimeout(idbGet('media:' + rel), 800, null);
-  if (blob && blob.size) {
-    const url = URL.createObjectURL(blob);
-    mediaBlobUrls[rel] = url;
-    return url;
-  }
-  return null;
 }
 // 后台下载并缓存（不阻塞当前播放/渲染），下次直接用本地副本
 function prefetchMedia(u) {
@@ -225,7 +249,7 @@ function prefetchMedia(u) {
       mediaBlobUrls[rel] = url;
       return url;
     }
-    for (const src of [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel]) {
+    for (const src of [MEDIA_PAGES_PREFIX + rel, MEDIA_CDN_PREFIX + rel, MEDIA_RAW_PREFIX + rel]) {
       try {
         const resp = await fetch(src, { mode: 'cors' });
         if (!resp.ok) continue;
@@ -361,13 +385,13 @@ function mediaHtml(m, cls) {
   const posterAttr = poster ? ` poster="${poster}"` : '';
   if (m.type === 'image') {
     if (cls !== 'post') {
-      return `<img src="${cachedMediaUrl(raw) || mediaPagesUrl(raw)}"${cachedMediaUrl(raw) ? '' : fastImgFallbackAttr(raw)} data-media-cache="${escapeHtml(raw)}" class="detail-img" loading="lazy" decoding="async" onload="cacheLoadedMedia(this)">`;
+      return `<img src="${cachedMediaUrl(raw) || mediaPagesUrl(raw)}"${cachedMediaUrl(raw) ? '' : fastImgFallbackAttr(raw)} class="detail-img" loading="lazy" decoding="async">`;
     }
-    // 动态列表：优先用本地缓存；有缩略图就用缩略图（640px 足够看，不再自动下载原图）
+    // 动态列表：优先用本地缓存；有缩略图就用缩略图（640px 足够看，不再下载原图）
     const cacheRaw = m.thumb || raw;
     const cached = cachedMediaUrl(cacheRaw);
     const thumb = cached || mediaPagesUrl(cacheRaw);
-    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${cached ? '' : imgFallbackAttr(cacheRaw)} data-media-cache="${escapeHtml(cacheRaw)}" data-full-media="${escapeHtml(raw)}" onload="cacheLoadedMedia(this)">`;
+    return `<img src="${thumb}" class="post-img" loading="lazy" decoding="async"${cached ? '' : imgFallbackAttr(cacheRaw)}>`;
   }
 
   // 动态列表：直接内嵌播放，点播放键就地在动态里播放，不再跳转
@@ -1238,12 +1262,9 @@ async function openUserPage(userId) {
   document.getElementById('user-page').style.display = 'block';
   openOverlay('user-page');
 
-  // 封面图：命中本地缓存则立刻换上，没有就后台拉取并缓存（下次秒开）
+  // 封面图：本地已缓存就直接用，没有就交给 <img> 正常加载（不再额外多下一遍）
   const coverRef = user && user.cover;
-  if (coverRef) {
-    getCachedMediaUrl(coverRef).then(url => applyCoverToPage(userId, coverRef, url));
-    prefetchMedia(coverRef);
-  }
+  if (coverRef && cachedMediaUrl(coverRef)) applyCoverToPage(userId, coverRef, cachedMediaUrl(coverRef));
 
   // 后台刷新用户信息和动态
   try {
@@ -1261,13 +1282,8 @@ async function openUserPage(userId) {
     if (currentUserPageId === userId && overlayStack.includes('user-page')) {
       renderUserPage(userId, user, visible);
       const fresh = user && user.cover;
-      if (fresh) {
-        getCachedMediaUrl(fresh).then(url => applyCoverToPage(userId, fresh, url));
-        prefetchMedia(fresh);
-      }
+      if (fresh && cachedMediaUrl(fresh)) applyCoverToPage(userId, fresh, cachedMediaUrl(fresh));
     }
-    // 顺手把其他人的封面也预取进本地缓存，下次点进别人主页可以秒开
-    (allUsersCache || []).forEach(u => { if (u && u.cover) prefetchMedia(u.cover); });
   } catch (e) {
     console.error('主页刷新失败', e);
   }
@@ -1857,8 +1873,8 @@ function resetMusicProgress() {
 
 function musicSources(url) {
   const rel = mediaRelPath(url);
-  // jsDelivr 对这个仓库不生效（会 301 回 raw），所以直接用 Pages + raw，少一次跳转
-  return rel ? [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [url];
+  // Pages → gcore CDN → raw，任何一条卡住都有下一条可换
+  return rel ? [MEDIA_PAGES_PREFIX + rel, MEDIA_CDN_PREFIX + rel, MEDIA_RAW_PREFIX + rel] : [url];
 }
 
 function musicBarHtml(post) {
@@ -1967,9 +1983,9 @@ async function playMusic(kind, id, sources, restart) {
   pausePageVideos();
   syncMusicButtons();
 
-  // 本地缓存命中就直接播放，不再走网络
-  const cachedUrl = await getCachedMediaUrl(sources[0]);
-  if (op !== musicPlayOp) return;
+  // 只在内存里已有缓存副本时才用 blob（同步判断）：
+  // 不能 await 读 IndexedDB，否则会打断 iOS 的用户手势授权，导致 play() 静默失败
+  const cachedUrl = cachedMediaUrl(sources[0]);
   const list = cachedUrl ? [cachedUrl, ...sources] : sources;
 
   const start = (changed || restart) ? 0 : musicState.sourceIndex;
@@ -1984,7 +2000,10 @@ async function playMusic(kind, id, sources, restart) {
       } else if (audio.ended) {
         audio.currentTime = 0;
       }
-      await audio.play();
+      await Promise.race([
+        audio.play(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('play-timeout')), 12000))
+      ]);
       if (op !== musicPlayOp) return;
       musicState.loading = false;
       syncMusicButtons();
@@ -2083,13 +2102,15 @@ async function togglePostVoice(postId) {
   }
   stopMusic();
   stopCurrentVoice();
-  // 构建播放源：Pages → raw（jsDelivr 对本仓库不生效），本地缓存优先
+  // 构建播放源：Pages → CDN → raw，本地缓存优先
   const rel = mediaRelPath(post.voice.url);
   const sources = rel ? [
     MEDIA_PAGES_PREFIX + rel,
+    MEDIA_CDN_PREFIX + rel,
     MEDIA_RAW_PREFIX + rel
   ] : [post.voice.url];
-  const cachedVoice = await getCachedMediaUrl(post.voice.url);
+  // 内存里已有本地副本才用（同步），避免 await 打断 iOS 的手势授权
+  const cachedVoice = cachedMediaUrl(post.voice.url);
   if (cachedVoice) sources.unshift(cachedVoice);
   currentPlayingVoiceId = postId;
   voiceState.sources = sources;
@@ -4177,8 +4198,6 @@ async function loadUsersCache() {
   try {
     const { content: users } = await ghGetFile('data/users.json');
     allUsersCache = users || [];
-    // 后台把大家的封面预取到本地，进主页时就不用等这张慢图了
-    allUsersCache.forEach(u => { if (u && u.cover) prefetchMedia(u.cover); });
   } catch (e) {
     console.error('加载用户列表失败', e);
   }
@@ -4406,6 +4425,8 @@ window.addEventListener('DOMContentLoaded', () => {
   else showAuth();
   // 把本地已缓存的图片/音频读进内存，之后渲染列表可以秒出
   hydrateMediaCache();
+  // 图片卡住不返回时自动换线路，避免一直空白
+  initImgFallbackWatch();
 });
 
 // 草稿：输入即记录；离开页面 / 切到后台 / 关闭 App 前再保存一次
