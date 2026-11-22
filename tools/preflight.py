@@ -100,6 +100,14 @@ check_duplicates()
 check_required()
 check_media_paths()
 
+# 行为级冒烟：函数还在但被改坏（v130 就是这种情况）也能拦住
+smoke = ROOT / 'tools' / 'smoke.py'
+if smoke.exists():
+    r = subprocess.run([sys.executable, str(smoke)], capture_output=True, text=True)
+    if r.returncode != 0:
+        print((r.stdout or '').strip())
+        errors.append('行为冒烟测试未通过（上面的 - 行即被改坏的功能）')
+
 for w in warns:
     print('⚠️  ' + w)
 if errors:
