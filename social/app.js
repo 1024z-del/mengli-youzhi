@@ -928,12 +928,16 @@ async function viewPost(id) {
     renderPostDetail(id);
     document.getElementById('detail-view').style.display = 'flex';
     openOverlay('detail-view');
-    // 后台静默刷新最新数据
+    // 后台静默刷新最新数据；如果内容没变化就不重建 DOM（否则会闪好几下）
+    const sig = p => p ? JSON.stringify([p.text, (p.comments || []).length, (p.likes || []).length, (p.media || []).length, p.music && p.music.url, p.voice && p.voice.url]) : '';
+    const before = sig(cached);
     (async () => {
       try {
         const { content: posts, sha } = await ghGetFile('data/posts.json');
         allPostsCache = posts || [];
         postsShaCache = sha;
+        const fresh = allPostsCache.find(p => p.id === id);
+        if (sig(fresh) === before) return;
         renderPostDetail(id);
       } catch (e) { console.error('刷新详情失败', e); }
     })();
