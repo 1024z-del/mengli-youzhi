@@ -74,10 +74,31 @@ def check_required():
             errors.append(f'关键函数/常量丢失：{name}')
 
 
+def check_media_paths():
+    """回归检查：mediaRelPath 必须返回 media/<文件名>，否则所有图片地址都会 404。"""
+    src = APP.read_text(encoding='utf-8')
+    m = re.search(r'function mediaRelPath[\s\S]*?\n\}', src)
+    if not m:
+        errors.append('mediaRelPath 函数丢失')
+        return
+    code = m.group(0) + """
+var sample = 'https://raw.githubusercontent.com/a/b/main/social/media/1_x_img.jpg?raw=true';
+print(mediaRelPath(sample));
+"""
+    tmp = pathlib.Path(tempfile.mkdtemp()) / 'path.js'
+    tmp.write_text(code, encoding='utf-8')
+    jsc = '/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc'
+    r = subprocess.run([jsc, str(tmp)], capture_output=True, text=True)
+    got = (r.stdout or '').strip()
+    if got != 'media/1_x_img.jpg':
+        errors.append(f'mediaRelPath 解析结果异常：{got!r}（应为 media/1_x_img.jpg）')
+
+
 check_version()
 check_syntax()
 check_duplicates()
 check_required()
+check_media_paths()
 
 for w in warns:
     print('⚠️  ' + w)
