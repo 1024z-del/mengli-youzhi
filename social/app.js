@@ -2000,10 +2000,16 @@ async function playMusic(kind, id, sources, restart) {
       } else if (audio.ended) {
         audio.currentTime = 0;
       }
-      await Promise.race([
-        audio.play(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('play-timeout')), 12000))
-      ]);
+      // 网络慢时 play() 会一直等着缓冲，不能中途掐断（否则会重头下载）。
+      // 这里只做提示，不打断；真正失败（onerror）才换线路。
+      const bufferHint = setTimeout(() => {
+        if (op === musicPlayOp && audio.currentTime === 0) showToast('网络较慢，正在缓冲…');
+      }, 6000);
+      try {
+        await audio.play();
+      } finally {
+        clearTimeout(bufferHint);
+      }
       if (op !== musicPlayOp) return;
       musicState.loading = false;
       syncMusicButtons();
@@ -2252,7 +2258,8 @@ function addImage() {
         continue;
       }
       const base64 = await compressImage(file, 920, 0.66);
-      const thumb = await compressImage(file, 640, 0.62);
+      // 列表只看得到一两百像素，缩略图压到 420px 足够，体积能小 3~5 倍
+      const thumb = await compressImage(file, 420, 0.56);
       pendingMedia.push({ kind: 'image', data: base64, thumb, name: 'img.jpg', mime: 'image/jpeg' });
     }
     input.value = '';
