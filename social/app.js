@@ -320,7 +320,7 @@ function mediaListHtml(p, cls) {
   const list = getPostMedia(p);
   const allImgs = list.length >= 1 && list.every(m => m.type === 'image');
   if (cls !== 'post' || !allImgs) return list.map(m => mediaHtml(m, cls)).join('');
-  galleryStore[p.id] = list.map(m => ({ url: m.url, thumb: m.thumb || null }));
+  galleryStore[p.id] = list.map(m => ({ url: m.url, thumb: m.thumb || null, xl: m.xl || null }));
   const cols = list.length === 1 ? 1 : (list.length === 4 ? 2 : 3);
   const cells = list.map((m, i) => `<div class="img-cell" onclick="event.stopPropagation();openImageGallery('${p.id}',${i})">
       <img src="${mediaPagesUrl(m.thumb || m.url)}" loading="lazy" decoding="async"${imgFallbackAttr(m.thumb || m.url)}>
@@ -353,7 +353,7 @@ function renderGallery(urls, start, showIdx) {
     <div class="gal-slide">
       ${it.thumb ? `<img class="gal-ph" src="${mediaPagesUrl(it.thumb)}" decoding="async" alt="">` : ''}
       <span class="gal-spin" aria-hidden="true"></span>
-      <img class="gal-img" src="${mediaCdnUrl(it.url)}" data-pages="${mediaPagesUrl(it.url)}" loading="${i === start ? 'eager' : 'lazy'}" decoding="async">
+      <img class="gal-img" data-idx="${i}" src="${mediaCdnUrl(it.url)}" data-pages="${mediaPagesUrl(it.url)}" loading="${i === start ? 'eager' : 'lazy'}" decoding="async">
       ${showIdx ? `<span class="gal-idx">${i + 1}/${items.length}</span>` : ''}
     </div>`).join('')}</div>`;
   // 大图优先走 jsDelivr（国内通常比 Pages 快），3.5 秒没加载完或失败就切回 Pages
@@ -367,6 +367,14 @@ function renderGallery(urls, start, showIdx) {
       settled = true;
       clearTimeout(timer);
       if (img.parentNode) img.parentNode.classList.add('ready');
+      // 先出中图（快），再在后台补高清大图并原地替换
+      const xl = items[+img.dataset.idx] && items[+img.dataset.idx].xl;
+      if (xl && !img.dataset.hd) {
+        img.dataset.hd = '1';
+        const hd = new Image();
+        hd.onload = () => { if (hd.naturalWidth) img.src = hd.src; };
+        hd.src = mediaCdnUrl(xl);
+      }
     });
     img.addEventListener('error', () => {
       if (pages && img.src !== pages) img.src = pages;
@@ -2265,7 +2273,9 @@ function addImage() {
       const base64 = await compressImage(file, 920, 0.66);
       // 列表只看得到一两百像素，缩略图压到 420px 足够，体积能小 3~5 倍
       const thumb = await compressImage(file, 420, 0.56);
-      pendingMedia.push({ kind: 'image', data: base64, thumb, name: 'img.jpg', mime: 'image/jpeg' });
+      // 点开看大图时再补一张高清版（不参与列表加载，不影响速度）
+      const xl = await compressImage(file, 1600, 0.76);
+      pendingMedia.push({ kind: 'image', data: base64, thumb, xl, name: 'img.jpg', mime: 'image/jpeg' });
     }
     input.value = '';
     renderPendingMedia();
@@ -2726,6 +2736,7 @@ async function startEditPost(id) {
     kind: m.type,
     url: m.url,
     thumb: m.type === 'image' ? (m.thumb || null) : null,
+    xl: m.type === 'image' ? (m.xl || null) : null,
     poster: m.poster || null,
     live: !!m.live,
     sound: m.sound !== false,
@@ -2808,7 +2819,7 @@ async function uploadPendingContent() {
       const i = nextIndex++;
       const m = pendingMedia[i];
       if (m.url) {
-        uploaded[i] = { url: m.url, poster: m.kind === 'video' ? (m.poster || null) : (m.thumb || null) };
+        uploaded[i] = { url: m.url, poster: m.kind === 'video' ? (m.poster || null) : (m.thumb || null), xl: m.xl || null };
         done++;
         showUploadProgress(`上传中 ${done}/${total}...`);
         continue;
@@ -2818,8 +2829,11 @@ async function uploadPendingContent() {
       const extraTask = m.thumb
         ? ghUploadMedia('thumb.jpg', m.thumb).catch(e => { console.warn('缩略图上传失败', e); return null; })
         : Promise.resolve(null);
-      const [url, extra] = await Promise.all([ghUploadMedia(m.name, m.data), extraTask]);
-      uploaded[i] = { url, poster: extra };
+      const xlTask = m.xl
+        ? ghUploadMedia('xl.jpg', m.xl).catch(e => { console.warn('高清图上传失败', e); return null; })
+        : Promise.resolve(null);
+      const [url, extra, xlUrl] = await Promise.all([ghUploadMedia(m.name, m.data), extraTask, xlTask]);
+      uploaded[i] = { url, poster: extra, xl: xlUrl };
       done++;
       showUploadProgress(`上传中 ${done}/${total}...`);
     }
@@ -2851,6 +2865,7 @@ async function uploadPendingContent() {
       if (u.poster) item.poster = u.poster;
     } else if (u.poster) {
       item.thumb = u.poster;
+      if (u.xl) item.xl = u.xl;
     }
     return item;
   });
@@ -3052,6 +3067,7 @@ async function saveDraftNow() {
       kind: m.kind,
       url: m.url || null,
       thumb: m.url ? (m.thumb || m.poster || null) : null,
+      xl: m.url ? (m.xl || null) : null,
       live: !!m.live,
       sound: m.sound !== false,
       hasData: !!m.data
@@ -3061,7 +3077,7 @@ async function saveDraftNow() {
   try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch (e) {}
   for (const m of pendingMedia) {
     if (!m.data || draftSavedBlobs.has(m.key)) continue;
-    await idbSet('m_' + m.key, { data: m.data, mime: m.mime || 'image/jpeg', thumb: m.thumb || '' });
+    await idbSet('m_' + m.key, { data: m.data, mime: m.mime || 'image/jpeg', thumb: m.thumb || '', xl: m.xl || '' });
     draftSavedBlobs.add(m.key);
   }
   if (pendingMusic && pendingMusic.data && !draftSavedBlobs.has('music_key')) {
@@ -3112,6 +3128,7 @@ async function maybeRestoreDraft() {
         kind: item.kind,
         url: item.url || null,
         thumb: rec ? (rec.thumb || '') : (item.thumb || null),
+        xl: rec ? (rec.xl || '') : (item.xl || null),
         poster: null,
         live: !!item.live,
         sound: item.sound !== false,
