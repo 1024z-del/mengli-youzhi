@@ -115,10 +115,11 @@ const MEDIA_PAGES_PREFIX = `https://${GH.owner}.github.io/${GH.repo}/social/`;
 const MEDIA_CDN_PREFIX = `https://gcore.jsdelivr.net/gh/${GH.owner}/${GH.repo}@${GH.branch}/social/`;
 function mediaRelPath(u) {
   if (!u) return null;
-  // raw / Pages / CDN 三种写法都兼容，也去掉 ?raw=true 之类的参数
+  // raw / Pages / CDN 三种写法都兼容，也去掉 ?raw=true 之类的参数。
+  // 注意返回值必须带 media/ 前缀（各前缀常量都以 /social/ 结尾）
   const s = String(u).split('?')[0];
   const i = s.indexOf('/social/media/');
-  return i >= 0 ? s.slice(i + '/social/media/'.length) : null;
+  return i >= 0 ? 'media/' + s.slice(i + '/social/media/'.length) : null;
 }
 // 国内网络下 Pages 最稳（App 本身就是从 Pages 加载的），CDN 作为备用
 function mediaRenderUrl(u) {
@@ -3769,7 +3770,9 @@ function postMediaFiles(p) {
 
 // 从仓库里真正删掉一个媒体文件
 async function ghDeleteMedia(rel) {
-  const api = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/media/${rel}`;
+  const name = String(rel).split('/').pop();
+  if (!name) return;
+  const api = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/media/${name}`;
   try {
     const r = await fetch(api, { headers, cache: 'no-store' });
     if (!r.ok) return; // 404 说明本来就不在了
