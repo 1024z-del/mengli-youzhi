@@ -110,7 +110,6 @@ async function ghUploadMedia(name, base64, options) {
 // ---- 媒体地址：优先 jsDelivr CDN（国内更快），失败再回退 Pages / raw ----
 const MEDIA_RAW_PREFIX = `https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/social/`;
 const MEDIA_PAGES_PREFIX = `https://${GH.owner}.github.io/${GH.repo}/social/`;
-const MEDIA_CDN_PREFIX = `https://cdn.jsdelivr.net/gh/${GH.owner}/${GH.repo}@${GH.branch}/social/`;
 function mediaRelPath(u) {
   return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? u.slice(MEDIA_RAW_PREFIX.length) : null;
 }
@@ -123,16 +122,17 @@ function mediaPagesUrl(u) {
   const rel = mediaRelPath(u);
   return rel ? MEDIA_PAGES_PREFIX + rel : u;
 }
+// 实测：jsDelivr 对这个仓库只会 301 跳回 raw.githubusercontent.com，
+// 而 raw 在部分网络下完全不通（15s 零字节），所以一律用 Pages，raw 只作最后兜底。
 function mediaCdnUrl(u) {
-  const rel = mediaRelPath(u);
-  return rel ? MEDIA_CDN_PREFIX + rel : u;
+  return mediaPagesUrl(u);
 }
 function mediaFallbackAttr(rawUrl) {
   const rel = mediaRelPath(rawUrl);
   if (!rel) return '';
-  const cdn = MEDIA_CDN_PREFIX + rel;
-  // 依次回退：Pages → CDN → raw
-  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${cdn}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${rawUrl}';}"`;
+  const pages = MEDIA_PAGES_PREFIX + rel;
+  // 依次回退：Pages → raw（raw 只在 Pages 真的 404 时才救急）
+  return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${rawUrl}';}"`;
 }
 
 // 图片兜底：Pages 刚部署时新文件会短暂 404，先用 raw 拿到，再换回 Pages / CDN
@@ -141,16 +141,16 @@ function fastImgFallbackAttr(rawUrl) {
   if (!rel) return '';
   const pages = MEDIA_PAGES_PREFIX + rel;
   const raw = MEDIA_RAW_PREFIX + rel;
-  // CDN 失败 → Pages → raw
+  // Pages → raw（raw 只在确实 404 时兜底，避免它卡住等待）
   return ` onerror="if(!this.dataset.f){this.dataset.f='1';this.src='${pages}';}else if(this.dataset.f==='1'){this.dataset.f='2';this.src='${raw}';}"`;
 }
 function imgFallbackAttr(u) {
   const rel = mediaRelPath(u);
   if (!rel) return '';
-  const raw = MEDIA_RAW_PREFIX + rel;
   const pages = MEDIA_PAGES_PREFIX + rel;
-  const cdn = MEDIA_CDN_PREFIX + rel;
-  return ` onerror="imgRetry(this)" data-fb='${JSON.stringify([raw, pages, cdn, pages])}'`;
+  const raw = MEDIA_RAW_PREFIX + rel;
+  // 第一顺位就是 Pages；raw 只作最后兜底（它可能整段卡死，不能放前面）
+  return ` onerror="imgRetry(this)" data-fb='${JSON.stringify([pages, raw])}'`;
 }
 
 function imgRetry(img) {
@@ -187,18 +187,24 @@ function cachedMediaUrl(u) {
   const rel = mediaRelPath(u);
   return rel ? (mediaBlobUrls[rel] || null) : null;
 }
+// IndexedDB 偶尔会被阻塞（另一个标签页占用、Safari 回收等），
+// 不能让播放/渲染无限等它，统一加个超时。
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise(res => setTimeout(() => res(fallback), ms))
+  ]);
+}
 async function getCachedMediaUrl(u) {
   const rel = mediaRelPath(u);
   if (!rel) return null;
   if (mediaBlobUrls[rel]) return mediaBlobUrls[rel];
-  try {
-    const blob = await idbGet('media:' + rel);
-    if (blob && blob.size) {
-      const url = URL.createObjectURL(blob);
-      mediaBlobUrls[rel] = url;
-      return url;
-    }
-  } catch (e) {}
+  const blob = await withTimeout(idbGet('media:' + rel), 800, null);
+  if (blob && blob.size) {
+    const url = URL.createObjectURL(blob);
+    mediaBlobUrls[rel] = url;
+    return url;
+  }
   return null;
 }
 // 后台下载并缓存（不阻塞当前播放/渲染），下次直接用本地副本
@@ -213,14 +219,12 @@ function prefetchMedia(u) {
   if (audioBusy) return Promise.resolve(null);
   const job = (async () => {
     // 先看本地有没有（可能还没 hydrate 进内存）
-    try {
-      const old = await idbGet('media:' + rel);
-      if (old && old.size) {
-        const url = URL.createObjectURL(old);
-        mediaBlobUrls[rel] = url;
-        return url;
-      }
-    } catch (e) {}
+    const old = await withTimeout(idbGet('media:' + rel), 800, null);
+    if (old && old.size) {
+      const url = URL.createObjectURL(old);
+      mediaBlobUrls[rel] = url;
+      return url;
+    }
     for (const src of [MEDIA_PAGES_PREFIX + rel, MEDIA_RAW_PREFIX + rel]) {
       try {
         const resp = await fetch(src, { mode: 'cors' });
