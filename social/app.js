@@ -114,7 +114,11 @@ const MEDIA_PAGES_PREFIX = `https://${GH.owner}.github.io/${GH.repo}/social/`;
 // 但 jsDelivr 的 gcore 节点能直接 200 返回文件，作为 Pages 之外的第二条线路。
 const MEDIA_CDN_PREFIX = `https://gcore.jsdelivr.net/gh/${GH.owner}/${GH.repo}@${GH.branch}/social/`;
 function mediaRelPath(u) {
-  return (u && u.indexOf(MEDIA_RAW_PREFIX) === 0) ? u.slice(MEDIA_RAW_PREFIX.length) : null;
+  if (!u) return null;
+  // raw / Pages / CDN 三种写法都兼容，也去掉 ?raw=true 之类的参数
+  const s = String(u).split('?')[0];
+  const i = s.indexOf('/social/media/');
+  return i >= 0 ? s.slice(i + '/social/media/'.length) : null;
 }
 // 国内网络下 Pages 最稳（App 本身就是从 Pages 加载的），CDN 作为备用
 function mediaRenderUrl(u) {
