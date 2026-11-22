@@ -429,7 +429,7 @@
 
 <script>
 // 自动检测更新：如果版本变了，强制刷新（绕过缓存）
-const CURRENT_V = 128;
+const CURRENT_V = 129;
 function forceReload() {
   // 20 秒内只刷新一次，避免版本号对不上时陷入无限刷新
   const last = +(sessionStorage.getItem('mlyz_reload_at') || 0);
@@ -463,6 +463,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('focus', checkUpdate);
 window.addEventListener('pageshow', checkUpdate);
 </script>
-<script src="app.js?v=128"></script>
+<script src="app.js?v=129"></script>
 </body>
 </html>

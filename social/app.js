@@ -3753,16 +3753,58 @@ async function restoreTrashItem(postId) {
   }
 }
 
+// 一条动态用到的所有媒体文件（相对路径）
+function postMediaFiles(p) {
+  const out = [];
+  const push = u => { const r = u && mediaRelPath(u); if (r) out.push(r); };
+  (p.media || []).forEach(m => { push(m.url); push(m.thumb); push(m.xl); push(m.poster); });
+  if (p.music) push(p.music.url);
+  if (p.voice) push(p.voice.url);
+  return [...new Set(out)];
+}
+
+// 从仓库里真正删掉一个媒体文件
+async function ghDeleteMedia(rel) {
+  const api = `${GH.base}/repos/${GH.owner}/${GH.repo}/contents/social/media/${rel}`;
+  try {
+    const r = await fetch(api, { headers, cache: 'no-store' });
+    if (!r.ok) return; // 404 说明本来就不在了
+    const info = await r.json();
+    const del = await fetch(api, {
+      method: 'DELETE',
+      headers,
+      body: JSON.stringify({ message: `chore: 删除媒体 ${rel}`, sha: info.sha, branch: GH.branch })
+    });
+    if (!del.ok) console.warn('删除媒体失败', rel, del.status);
+  } catch (e) {
+    console.warn('删除媒体异常', rel, e);
+  }
+}
+
+// 删除一组媒体文件，仍被其他动态/回收站引用的跳过
+async function deleteMediaFiles(rels) {
+  if (!rels || !rels.length) return;
+  const used = new Set();
+  (allPostsCache || []).concat(trashCache || []).forEach(p => postMediaFiles(p).forEach(r => used.add(r)));
+  for (const rel of rels) {
+    if (used.has(rel)) continue;
+    await ghDeleteMedia(rel);
+  }
+}
+
 async function permanentDeleteTrash(postId) {
   if (!confirm('确定永久删除吗？删除后无法恢复！')) return;
   const prevCache = trashCache;
   const prevSha = trashSha;
+  const removed = trashCache.find(t => t.id === postId);
   // 先立刻从界面移除，再写云端
   trashCache = trashCache.filter(t => t.id !== postId);
   trashVersion++;
   renderTrashList();
   try {
     await writeTrashCache();
+    // 连同这条动态的图片/音乐/语音文件一起从仓库删掉
+    if (removed) await deleteMediaFiles(postMediaFiles(removed));
     showToast('✅ 已永久删除');
   } catch (e) {
     console.error('永久删除失败', e);
@@ -3782,7 +3824,10 @@ async function cleanupOldTrash() {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const cleaned = trash.filter(t => new Date(t.deletedAt).getTime() > cutoff);
     if (cleaned.length !== trash.length) {
+      const dropped = trash.filter(t => new Date(t.deletedAt).getTime() <= cutoff);
       await ghPutFile('data/trash.json', cleaned, sha);
+      trashCache = cleaned;
+      for (const p of dropped) await deleteMediaFiles(postMediaFiles(p));
     }
   } catch (e) {
     console.error('清理回收站失败', e);
