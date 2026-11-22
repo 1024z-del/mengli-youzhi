@@ -243,7 +243,7 @@ function prefetchMedia(u) {
   if (audioBusy) return Promise.resolve(null);
   const job = (async () => {
     // 先看本地有没有（可能还没 hydrate 进内存）
-    const old = await withTimeout(idbGet('media:' + rel), 800, null);
+    const old = await withTimeout(idbGet(MEDIA_KEY + rel), 800, null);
     if (old && old.size) {
       const url = URL.createObjectURL(old);
       mediaBlobUrls[rel] = url;
@@ -255,7 +255,10 @@ function prefetchMedia(u) {
         if (!resp.ok) continue;
         const blob = await resp.blob();
         if (!blob.size || blob.size > 25 * 1024 * 1024) continue;
-        idbSet('media:' + rel, blob);
+        // 下载被中途掐断时会拿到半截文件，直接存下来会导致"播一半没声"，这里丢掉
+        const len = Number(resp.headers.get('content-length') || 0);
+        if (len && blob.size !== len) continue;
+        idbSet(MEDIA_KEY + rel, blob);
         const url = URL.createObjectURL(blob);
         mediaBlobUrls[rel] = url;
         return url;
@@ -267,12 +270,14 @@ function prefetchMedia(u) {
   job.then(() => { delete mediaLoading[rel]; });
   return job;
 }
+// 媒体缓存键前缀：换版本号可以一次性丢弃旧的（可能不完整）缓存
+const MEDIA_KEY = 'media2:';
 // 启动时把本地已缓存的媒体读进内存，这样重建列表/切页都能直接命中
 async function hydrateMediaCache() {
   try {
-    const keys = await idbKeys('media:');
+    const keys = await idbKeys(MEDIA_KEY);
     for (const k of keys) {
-      const rel = k.slice(6);
+      const rel = k.slice(MEDIA_KEY.length);
       if (mediaBlobUrls[rel]) continue;
       const blob = await idbGet(k);
       if (blob && blob.size) mediaBlobUrls[rel] = URL.createObjectURL(blob);
